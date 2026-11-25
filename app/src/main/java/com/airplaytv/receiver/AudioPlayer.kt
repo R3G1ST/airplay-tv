@@ -151,6 +151,7 @@ class AudioPlayer {
     }
 
     private var pcmFrames = 0L
+    private var lastTrackRebuild = 0L
     private var alacErrors = 0
 
     private fun drain(c: MediaCodec) {
@@ -205,7 +206,15 @@ class AudioPlayer {
         try {
             t.write(pcm, 0, pcm.size)
         } catch (e: Throwable) {
-            Log.e(TAG, "AudioTrack write failed", e)
+            // The audio route can disappear (HDMI re-negotiation, device sleep).
+            // Rebuild the track once in a while instead of going silent forever.
+            Log.e(TAG, "AudioTrack write failed: ${e.message}, rebuilding")
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now - lastTrackRebuild > 5_000) {
+                lastTrackRebuild = now
+                releaseTrack()
+                createFallbackTrack()
+            }
         }
     }
 

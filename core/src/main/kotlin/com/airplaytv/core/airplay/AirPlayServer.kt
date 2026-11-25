@@ -171,6 +171,9 @@ class AirPlayServer(
     private val http = HttpServer(config.port) { request, response -> handle(request, response) }
 
     val deviceId: String get() = config.deviceId
+
+    /** True while the RTSP/HTTP server accepts connections. */
+    val isListening: Boolean get() = http.isListening
     val deviceName: String get() = config.name
     val port: Int get() = http.localPort
 

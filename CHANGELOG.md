@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.0 — reliability pass ("always connects, always works")
+
+- **Health watchdog**: every 30 s the service checks that the RTSP listener and
+  the mDNS responder are actually alive and restarts them if they died. Before,
+  the service could stay running but permanently deaf.
+- **Network changes**: a connectivity callback re-binds the multicast lock and
+  re-announces mDNS after Wi-Fi reconnect / subnet change, so the receiver
+  immediately reappears in the AirPlay list.
+- **CPU wake lock** during a cast (renewed every 30 s), so audio does not glitch
+  when the receiver runs in the background or the screen turns off.
+- **Decoder fallback**: if the hardware H.264 decoder stalls twice without ever
+  producing a frame, the receiver switches to the platform software decoder
+  instead of staying black forever.
+- **Audio route recovery**: a failed `AudioTrack.write` (HDMI re-negotiation,
+  sleep) rebuilds the track instead of going silent.
+- **Cover art is decoded off the main thread** and capped at 1024 px, removing
+  the stutter on track change and large-image memory spikes.
+- **Diagnostics**: during a cast the log gets `health: phase=… threads=… fds=…
+  pss=…KB` every 30 s, so leaks are measurable over long sessions.
+
 ## 1.2.3
 
 - Log the SPS/PPS of each mirroring stream (diagnostics for the 1080p black

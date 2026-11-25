@@ -60,6 +60,9 @@ class HttpServer(
 
     val localPort: Int get() = serverSocket?.localPort ?: port
 
+    /** True while the accept loop is running and the socket is bound. */
+    val isListening: Boolean get() = running && serverSocket?.isBound == true
+
     @Synchronized
     fun start() {
         if (running) return

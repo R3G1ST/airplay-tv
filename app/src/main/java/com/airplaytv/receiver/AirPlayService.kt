@@ -7,7 +7,12 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.os.PowerManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -28,6 +33,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
     @Volatile private var videoActive = false
     private var multicastLock: WifiManager.MulticastLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var cpuLock: PowerManager.WakeLock? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var pendingSurface: Surface? = null
 
     override fun onCreate() {
@@ -86,6 +93,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
 
         acquireMulticastLock()
         startMdns(deviceId, deviceName)
+        watchNetwork()
+        startHealthTicker()
         AppState.update { it.copy(deviceName = deviceName) }
 
         AppState.update {
@@ -96,6 +105,151 @@ class AirPlayService : Service(), AirPlayServer.Listener {
                 detail = "Откройте «Повтор экрана» на iPhone или Mac",
             )
         }
+    }
+
+    /** Re-binds sockets and re-announces when Wi-Fi reconnects or changes subnet. */
+    private val networkRefresh = Runnable {
+        try {
+            Log.i(TAG, "network changed, refreshing mDNS and locks")
+            mdns?.stop()
+            mdns = null
+            nsdFallback?.unregister()
+            nsdFallback = null
+            releaseWifiLock()
+            multicastLock?.let { if (it.isHeld) it.release() }
+            multicastLock = null
+            acquireMulticastLock()
+            startMdns(DeviceIdentity.deviceId(this), DeviceIdentity.deviceName(this))
+        } catch (e: Throwable) {
+            Log.w(TAG, "network refresh failed: ${e.message}")
+        }
+    }
+
+    private fun scheduleNetworkRefresh() {
+        uiHandler.removeCallbacks(networkRefresh)
+        uiHandler.postDelayed(networkRefresh, 1500)
+    }
+
+    private fun watchNetwork() {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val request = NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .build()
+            // Registering always fires onAvailable for the current network; that
+            // is not a change and must not re-announce right after boot.
+            val watchStartedAt = android.os.SystemClock.elapsedRealtime()
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    Log.i(TAG, "wifi available: $network")
+                    if (android.os.SystemClock.elapsedRealtime() - watchStartedAt < 5_000) return
+                    scheduleNetworkRefresh()
+                }
+
+                override fun onLost(network: Network) {
+                    Log.i(TAG, "wifi lost: $network")
+                    if (android.os.SystemClock.elapsedRealtime() - watchStartedAt < 5_000) return
+                    scheduleNetworkRefresh()
+                }
+            }
+            cm.registerNetworkCallback(request, cb)
+            networkCallback = cb
+        } catch (e: Throwable) {
+            Log.w(TAG, "cannot watch network: ${e.message}")
+        }
+    }
+
+    /**
+     * "Always there" watchdog. If a socket dies (driver reset, Doze, a bug) the
+     * service used to stay alive but deaf forever. Every 30 s we check the
+     * listener and the mDNS responder and bring them back.
+     */
+    private val healthTicker = object : Runnable {
+        override fun run() {
+            try {
+                if (::server.isInitialized && !server.isListening) {
+                    Log.w(TAG, "health: RTSP server is not listening, restarting")
+                    try {
+                        server.stop()
+                    } catch (_: Throwable) {
+                    }
+                    try {
+                        server.start()
+                        Log.i(TAG, "health: RTSP server restarted")
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "health: server restart failed", e)
+                    }
+                }
+                if (mdns != null && mdns?.isRunning != true) {
+                    Log.w(TAG, "health: mDNS is down, restarting")
+                    try {
+                        mdns?.stop()
+                        mdns = null
+                        startMdns(DeviceIdentity.deviceId(this@AirPlayService), DeviceIdentity.deviceName(this@AirPlayService))
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "health: mDNS restart failed: ${e.message}")
+                    }
+                }
+                val phase = AppState.snapshot.phase
+                if (phase != AppState.Phase.IDLE) {
+                    // A cast can outlive the 6 h wake-lock timeout: renew it.
+                    cpuLock?.let {
+                        try {
+                            it.acquire(6 * 60 * 60 * 1000L)
+                        } catch (_: Throwable) {
+                        }
+                    }
+                    Log.i(TAG, "health: phase=$phase threads=${Thread.activeCount()} fds=${countFds()} pss=${currentPssKb()}KB")
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "health tick failed: ${e.message}")
+            }
+            uiHandler.postDelayed(this, 30_000)
+        }
+    }
+
+    private fun startHealthTicker() {
+        uiHandler.removeCallbacks(healthTicker)
+        uiHandler.postDelayed(healthTicker, 30_000)
+    }
+
+    private fun countFds(): Int = try {
+        java.io.File("/proc/self/fd").list()?.size ?: -1
+    } catch (_: Throwable) {
+        -1
+    }
+
+    private fun currentPssKb(): Int = try {
+        val info = android.os.Debug.MemoryInfo()
+        android.os.Debug.getMemoryInfo(info)
+        info.totalPss
+    } catch (_: Throwable) {
+        -1
+    }
+
+    /** Keeps the CPU awake while a cast plays in the background. */
+    private fun acquireCpuLock() {
+        if (cpuLock != null) return
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            cpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "airplay-tv:session").apply {
+                setReferenceCounted(false)
+                acquire(6 * 60 * 60 * 1000L) // renewed on every session start
+            }
+            Log.i(TAG, "CPU wake lock acquired")
+        } catch (e: Throwable) {
+            Log.w(TAG, "CPU wake lock unavailable: ${e.message}")
+        }
+    }
+
+    private fun releaseCpuLock() {
+        cpuLock?.let {
+            try {
+                if (it.isHeld) it.release()
+            } catch (_: Throwable) {
+            }
+        }
+        cpuLock = null
     }
 
     private fun retryServerStart() {
@@ -175,6 +329,16 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         videoPlayer?.stop()
         dacp?.stop()
         releaseWifiLock()
+        releaseCpuLock()
+        uiHandler.removeCallbacks(healthTicker)
+        uiHandler.removeCallbacks(networkRefresh)
+        networkCallback?.let {
+            try {
+                (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it)
+            } catch (_: Throwable) {
+            }
+        }
+        networkCallback = null
         multicastLock?.let {
             try {
                 if (it.isHeld) it.release()
@@ -370,6 +534,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
     override fun onSessionStarted(deviceName: String?) {
         Log.i(TAG, "session started, remote idle ${msSinceUserActivity()}ms")
         acquireWifiLock()
+        acquireCpuLock()
         launchUi(force = true)
         // The phase is decided by the first SETUP: video config -> mirroring,
         // audio stream -> music. RECORD alone is sent by both. A paused track
@@ -389,6 +554,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         Log.i(TAG, "session ended")
         uiHandler.removeCallbacks(uiTicker)
         releaseWifiLock()
+        releaseCpuLock()
         uiHandler.removeCallbacks(audioWatchdog)
         videoActive = false
         stopProgressTicker()

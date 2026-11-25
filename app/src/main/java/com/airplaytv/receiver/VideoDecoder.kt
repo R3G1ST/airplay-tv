@@ -1,6 +1,7 @@
 package com.airplaytv.receiver
 
 import android.media.MediaCodec
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.util.Log
 import android.view.Surface
@@ -28,6 +29,9 @@ class VideoDecoder(
     private var lastOutputAt = 0L
     private var lastInputAt = 0L
     @Volatile private var paused = false
+    private var forceSoftware = false
+    private var stallCount = 0
+    private var renderedAny = false
 
     fun setSurface(newSurface: Surface?, forceReconfigure: Boolean = false) {
         synchronized(lock) {
@@ -113,7 +117,15 @@ class VideoDecoder(
             if (paused) return  // hidden: never recreate, it would lose the reference frames
             val now = android.os.SystemClock.elapsedRealtime()
             if (lastOutputAt > 0 && now - lastOutputAt > 5_000) {
-                Log.w(TAG, "decoder stalled for ${now - lastOutputAt}ms, recreating")
+                stallCount++
+                Log.w(TAG, "decoder stalled for ${now - lastOutputAt}ms (stall #$stallCount, rendered=$renderedAny), recreating")
+                // Some TV codecs simply cannot decode a given stream (profile,
+                // slices, level). Never stay black forever: after two stalled
+                // hardware attempts fall back to the platform software decoder.
+                if (!renderedAny && stallCount >= 2 && !forceSoftware) {
+                    forceSoftware = true
+                    Log.w(TAG, "switching to the software H.264 decoder")
+                }
                 recreateLocked()
             }
         }
@@ -132,7 +144,11 @@ class VideoDecoder(
             val index = c.dequeueOutputBuffer(bufferInfo, 0)
             when {
                 index >= 0 -> {
-                    if (rendered++ == 0L) Log.i(TAG, "first decoded frame rendered (${bufferInfo.size}b)")
+                    if (rendered++ == 0L) {
+                        renderedAny = true
+                        Log.i(TAG, "first decoded frame rendered (${bufferInfo.size}b)")
+                    }
+                    stallCount = 0
                     lastOutputAt = android.os.SystemClock.elapsedRealtime()
                     c.releaseOutputBuffer(index, render)
                     if (render) {
@@ -191,7 +207,7 @@ class VideoDecoder(
                 format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
             } catch (_: Throwable) {
             }
-            val c = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            val c = if (forceSoftware) createSoftwareDecoder() else MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             created = c
             c.configure(format, target, null, 0)
             c.start()
@@ -208,6 +224,26 @@ class VideoDecoder(
             // The surface died under us: wait for a fresh one from the activity.
             if (!target.isValid) surface = null
         }
+    }
+
+    /** First available software (Google) AVC decoder, used as a last resort. */
+    private fun createSoftwareDecoder(): MediaCodec {
+        try {
+            val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+            for (info in list.codecInfos) {
+                if (info.isEncoder) continue
+                if (!info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) }) continue
+                val name = info.name
+                if (name.contains("google", ignoreCase = true) || name.contains("software", ignoreCase = true)) {
+                    try {
+                        return MediaCodec.createByCodecName(name)
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
+        return MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
     }
 
     private fun releaseCodecLocked() {
@@ -234,6 +270,9 @@ class VideoDecoder(
         synchronized(lock) {
             paused = false
             releaseCodecLocked()
+            stallCount = 0
+            renderedAny = false
+            forceSoftware = false
             sps = null
             pps = null
             configuredWidth = 0

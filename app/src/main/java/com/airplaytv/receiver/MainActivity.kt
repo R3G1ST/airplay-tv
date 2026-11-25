@@ -605,6 +605,22 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
      * A real RenderEffect blur breaks composition on some TV GPU drivers
      * (the whole window turns black), so this stays on the safe path.
      */
+    private val artworkExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "artwork-decode").apply { isDaemon = true }
+    }
+
+    /** Decodes cover art at max 1024 px; some senders send multi-megabyte images. */
+    private fun decodeArtwork(bytes: ByteArray): android.graphics.Bitmap? = try {
+        val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+        var sample = 1
+        while (opts.outWidth / sample > 1024 || opts.outHeight / sample > 1024) sample *= 2
+        val decode = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decode)
+    } catch (_: Throwable) {
+        null
+    }
+
     private fun softBackdrop(source: android.graphics.Bitmap): android.graphics.Bitmap {
         return try {
             val tiny = android.graphics.Bitmap.createScaledBitmap(source, 48, 48, true)
@@ -724,19 +740,29 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         if (art != null && art !== shownArtwork) {
             val firstArt = shownArtwork == null
             shownArtwork = art
-            val bitmap = android.graphics.BitmapFactory.decodeByteArray(art, 0, art.size)
-            if (bitmap != null) {
-                artworkView.setImageBitmap(bitmap)
-                backdropView.setImageBitmap(softBackdrop(bitmap))
-                if (firstArt) {
-                    artworkView.alpha = 0f
-                    artworkView.scaleX = 0.94f
-                    artworkView.scaleY = 0.94f
-                    artworkView.animate().alpha(1f).scaleX(1f).scaleY(1f)
-                        .setDuration(450).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
-                } else {
-                    artworkView.alpha = 0.45f
-                    artworkView.animate().alpha(1f).setDuration(260).start()
+            // A 160 KB JPEG takes tens of milliseconds to decode: never on the
+            // main thread, or the music screen visibly stutters on track change.
+            artworkExecutor.execute {
+                val bitmap = decodeArtwork(art)
+                if (bitmap == null) return@execute
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) {
+                        bitmap.recycle()
+                        return@runOnUiThread
+                    }
+                    if (shownArtwork !== art) return@runOnUiThread
+                    artworkView.setImageBitmap(bitmap)
+                    backdropView.setImageBitmap(softBackdrop(bitmap))
+                    if (firstArt) {
+                        artworkView.alpha = 0f
+                        artworkView.scaleX = 0.94f
+                        artworkView.scaleY = 0.94f
+                        artworkView.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                            .setDuration(450).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+                    } else {
+                        artworkView.alpha = 0.45f
+                        artworkView.animate().alpha(1f).setDuration(260).start()
+                    }
                 }
             }
         }
@@ -899,6 +925,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onDestroy() {
         super.onDestroy()
+        artworkExecutor.shutdownNow()
         AirPlayService.attachSurfaceFromUi(null)
     }
 
