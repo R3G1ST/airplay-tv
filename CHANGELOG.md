@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.2
+
+- Added breathing room between the status pill and the two chip buttons on the
+  idle screen (removing the hint paragraph had left them almost touching).
+
+## 1.4.1 — calmer, more compact home screen
+
+- The idle screen is smaller and quieter: 84 dp icon, 28 sp title, compact status
+  pill and small chip buttons instead of the two large ones.
+- The status dot now has a soft expanding halo (one animator, no assets); it
+  stops when the activity is hidden.
+- Removed the "Open Screen Mirroring on iPhone or Mac" hint: the status pill
+  says everything, and the idle screen no longer shows a paragraph.
+- The status pill has a hairline border, closer to a tvOS capsule.
+
 ## 1.4.0 — typography
 
 - Bundled **Inter** (SIL OFL 1.1) as the UI typeface — a legal, metrically close

@@ -66,6 +66,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var interRegular: android.graphics.Typeface? = null
     private var interSemiBold: android.graphics.Typeface? = null
     private lateinit var appTitle: TextView
+    private var statusHalo: View? = null
+    private var statusPulse: android.animation.ValueAnimator? = null
+    private var statusColor = 0xFF34C759.toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,21 +161,21 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         overlay = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(48), dp(40), dp(48), dp(48))
+            setPadding(dp(48), dp(28), dp(48), dp(36))
         }
 
         val icon = ImageView(this)
         icon.setImageResource(R.drawable.ic_launcher)
         icon.alpha = 0.95f
-        overlay.addView(icon, LinearLayout.LayoutParams(dp(120), dp(120)).apply {
+        overlay.addView(icon, LinearLayout.LayoutParams(dp(84), dp(84)).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            bottomMargin = dp(28)
+            bottomMargin = dp(16)
         })
 
         appTitle = TextView(this).apply {
             text = "AirPlay TV"
             setTextColor(Color.WHITE)
-            textSize = 34f
+            textSize = 28f
             letterSpacing = 0.02f
             gravity = Gravity.CENTER
         }
@@ -180,40 +183,48 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
         deviceText = TextView(this).apply {
             setTextColor(Color.parseColor("#8E8E93"))
-            textSize = 18f
+            textSize = 14f
             gravity = Gravity.CENTER
-            setPadding(0, dp(6), 0, dp(36))
+            setPadding(0, dp(4), 0, dp(22))
         }
         overlay.addView(deviceText, wrapParams())
 
         val statusPill = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(9), dp(18), dp(9))
-            background = capsule(0x1FFFFFFF)
-        }
-        statusDot = View(this).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(0xFF34C759.toInt())
+            setPadding(dp(14), dp(7), dp(16), dp(7))
+            background = capsule(0x1FFFFFFF).apply {
+                setStroke(dp(1), 0x1FFFFFFF)
             }
         }
-        statusPill.addView(statusDot, LinearLayout.LayoutParams(dp(8), dp(8)).apply {
-            marginEnd = dp(10)
+        // Dot + expanding halo: a quiet "alive" signal, drawn with one animator
+        // and zero assets.
+        val dotBox = android.widget.FrameLayout(this)
+        statusHalo = View(this).apply {
+            background = dotDrawable(statusColor, 70)
+        }
+        dotBox.addView(statusHalo, android.widget.FrameLayout.LayoutParams(dp(8), dp(8), Gravity.CENTER))
+        statusDot = View(this).apply {
+            background = dotDrawable(statusColor, 255)
+        }
+        dotBox.addView(statusDot, android.widget.FrameLayout.LayoutParams(dp(8), dp(8), Gravity.CENTER))
+        statusPill.addView(dotBox, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+            marginEnd = dp(6)
         })
         statusText = TextView(this).apply {
             text = "Готов к подключению"
             setTextColor(Color.parseColor("#E8E8ED"))
-            textSize = 17f
+            textSize = 14f
+            letterSpacing = 0.01f
         }
         statusPill.addView(statusText)
         overlay.addView(statusPill, wrapParams())
 
         detailText = TextView(this).apply {
             setTextColor(Color.parseColor("#8E8E93"))
-            textSize = 15f
+            textSize = 13f
             gravity = Gravity.CENTER
-            setPadding(0, dp(12), 0, dp(40))
+            setPadding(0, dp(10), 0, dp(26))
             maxLines = 2
         }
         overlay.addView(detailText, wrapParams())
@@ -224,7 +235,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
         buttons.addView(button("Перезапустить") { restart() })
         buttons.addView(button("Имя устройства") { renameDevice() })
-        overlay.addView(buttons, wrapParams().apply { gravity = Gravity.CENTER_HORIZONTAL })
+        overlay.addView(buttons, wrapParams().apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = dp(22)
+        })
 
         badge = TextView(this).apply {
             setTextColor(Color.WHITE)
@@ -432,16 +446,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun button(label: String, onClick: () -> Unit): TextView =
         TextView(this).apply {
             text = label
-            textSize = 16f
-            setTextColor(Color.WHITE)
+            textSize = 13f
+            setTextColor(Color.parseColor("#E8E8ED"))
             gravity = Gravity.CENTER
-            setPadding(dp(26), dp(14), dp(26), dp(14))
-            background = capsule(0x1FFFFFFF)
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            background = capsule(0x14FFFFFF)
             isFocusable = true
             isClickable = true
             setOnClickListener { onClick() }
             setOnFocusChangeListener { v, focused ->
-                v.background = capsule(if (focused) 0x3DFFFFFF else 0x1FFFFFFF)
+                v.background = capsule(if (focused) 0x33FFFFFF else 0x14FFFFFF)
                 v.animate().scaleX(if (focused) 1.04f else 1f).scaleY(if (focused) 1.04f else 1f)
                     .setDuration(120).start()
             }
@@ -449,9 +463,46 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
-            lp.marginEnd = dp(14)
+            lp.marginEnd = dp(10)
             layoutParams = lp
         }
+
+    private fun dotDrawable(color: Int, alpha: Int): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(android.graphics.Color.argb(alpha, android.graphics.Color.red(color),
+                android.graphics.Color.green(color), android.graphics.Color.blue(color)))
+        }
+
+    private fun startStatusPulse() {
+        if (statusPulse != null) return
+        val halo = statusHalo ?: return
+        val dot = statusDot
+        statusPulse = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1600
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = android.view.animation.LinearInterpolator()
+            addUpdateListener {
+                val t = it.animatedValue as Float
+                halo.scaleX = 1f + 1.6f * t
+                halo.scaleY = halo.scaleX
+                halo.alpha = 0.6f * (1f - t)
+                dot.alpha = 1f - 0.3f * t
+            }
+            start()
+        }
+    }
+
+    private fun stopStatusPulse() {
+        statusPulse?.cancel()
+        statusPulse = null
+        statusHalo?.let {
+            it.scaleX = 1f
+            it.scaleY = 1f
+            it.alpha = 1f
+        }
+        statusDot.alpha = 1f
+    }
 
     private fun capsule(color: Int): GradientDrawable =
         GradientDrawable().apply {
@@ -576,17 +627,24 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             AppState.Phase.PLAYING, AppState.Phase.MIRRORING, AppState.Phase.CONNECTING -> 0xFF0A84FF.toInt()
             AppState.Phase.ERROR -> 0xFFFF453A.toInt()
         }
-        (statusDot.background as? GradientDrawable)?.setColor(dotColor)
-        detailText.text = when (state.phase) {
+        if (dotColor != statusColor) {
+            statusColor = dotColor
+            (statusDot.background as? GradientDrawable)?.setColor(dotColor)
+            statusHalo?.background = dotDrawable(dotColor, 70)
+        }
+        val detail = when (state.phase) {
             AppState.Phase.MIRRORING -> if (state.mirrorWidth > 0) {
                 "${state.mirrorWidth}×${state.mirrorHeight} • ${state.detail}"
             } else {
                 state.detail
             }
-            AppState.Phase.ERROR -> state.detail
-            AppState.Phase.PLAYING -> state.detail
-            else -> "Откройте «Повтор экрана» на iPhone или Mac"
+            AppState.Phase.ERROR, AppState.Phase.PLAYING, AppState.Phase.CONNECTING -> state.detail
+            // Idle needs no instructions: the status pill is enough, and the
+            // screen stays calm like a receiver should.
+            else -> ""
         }
+        detailText.text = detail
+        detailText.visibility = if (detail.isBlank()) View.GONE else View.VISIBLE
 
         val videoActive = state.phase == AppState.Phase.MIRRORING ||
             (state.phase == AppState.Phase.PLAYING && state.mirrorWidth > 0)
@@ -956,10 +1014,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     override fun onStart() {
         super.onStart()
         isVisible = true
+        startStatusPulse()
     }
 
     override fun onStop() {
         isVisible = false
+        stopStatusPulse()
         super.onStop()
     }
 
