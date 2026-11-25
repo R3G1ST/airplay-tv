@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.7
+
+- If the receiver screen is minimised during a cast, it comes back by itself
+  after ~12 seconds without remote input (and never while the remote is in use).
+
 ## 1.0.6
 
 - macOS sends TEARDOWN about half a second after mirroring starts (it restarts

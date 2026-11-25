@@ -863,15 +863,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         super.onPause()
     }
 
-    override fun onStop() {
-        super.onStop()
-        // Leaving the receiver on purpose (HOME/BACK) must not be undone by the
-        // service re-opening the same cast a few seconds later.
-        if (!isFinishing && AppState.snapshot.phase != AppState.Phase.IDLE) {
-            AirPlayService.instance?.noteUiDismissed()
-        }
-    }
-
     override fun onDestroy() {
         super.onDestroy()
         AirPlayService.attachSurfaceFromUi(null)

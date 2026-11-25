@@ -190,7 +190,6 @@ class AirPlayService : Service(), AirPlayServer.Listener {
 
     private var lastUiLaunch = 0L
     private var launchRetryScheduled = false
-    private var dismissedSession = -1L
 
     /**
      * How long ago the user last touched the remote. Uses the hidden
@@ -235,16 +234,10 @@ class AirPlayService : Service(), AirPlayServer.Listener {
      * until the remote has been idle for a while, so a cast never yanks the
      * screen away while somebody is navigating the TV.
      */
-    /** The user left the receiver screen on purpose: do not fight them for this cast. */
-    fun noteUiDismissed() {
-        dismissedSession = server.sessionId()
-    }
-
     private fun launchUi(force: Boolean = false) {
         if (MainActivity.isVisible) return
         val now = System.currentTimeMillis()
         if (now - lastUiLaunch < 4000) return
-        if (server.sessionId() == dismissedSession) return
 
         val idle = msSinceUserActivity()
         val requiredIdle = 12_000L
@@ -302,7 +295,6 @@ class AirPlayService : Service(), AirPlayServer.Listener {
     override fun onSessionStarted(deviceName: String?) {
         Log.i(TAG, "session started, remote idle ${msSinceUserActivity()}ms")
         acquireWifiLock()
-        dismissedSession = -1L
         launchUi(force = true)
         // The phase is decided by the first SETUP: video config -> mirroring,
         // audio stream -> music. RECORD alone is sent by both. A paused track
