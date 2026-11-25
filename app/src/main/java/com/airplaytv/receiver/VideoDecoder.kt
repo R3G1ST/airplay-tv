@@ -22,7 +22,7 @@ class VideoDecoder(
     private var configuredHeight = 0
     private val bufferInfo = MediaCodec.BufferInfo()
 
-    fun setSurface(newSurface: Surface?) {
+    fun setSurface(newSurface: Surface?, forceReconfigure: Boolean = false) {
         synchronized(lock) {
             if (newSurface != null && !newSurface.isValid) {
                 // Surfaces from a stopped activity stay referenced but are dead;
@@ -35,7 +35,10 @@ class VideoDecoder(
             surface = newSurface
             if (newSurface == null) {
                 releaseCodecLocked()
-            } else if (codec == null) {
+            } else if (codec == null || forceReconfigure) {
+                // A surface that comes back after the activity was hidden must
+                // get a fresh decoder: the old one may be attached to a dead
+                // surface and would silently render nothing.
                 configureLocked()
             }
         }

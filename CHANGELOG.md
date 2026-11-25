@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5
+
+- Reopening the app during an active mirroring no longer shows a frozen or
+  black picture: the decoder is always recreated when a fresh surface appears
+  (including after the activity was hidden and shown again).
+
 ## 1.0.4
 
 - One sender owns the screen: a new device preempts the previous cast instead of

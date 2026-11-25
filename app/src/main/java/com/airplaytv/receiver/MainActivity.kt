@@ -849,6 +849,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         super.onResume()
         isVisible = true
         AppState.addListener(stateListener)
+        // Re-attach the surface: after the activity was in the background the
+        // decoder may still point at a dead surface.
+        surfaceView.holder.surface?.let {
+            AirPlayService.attachSurfaceFromUi(it, forceReconfigure = true)
+        }
         surfaceView.holder.surface?.let { AirPlayService.attachSurfaceFromUi(it) }
     }
 
@@ -873,7 +878,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        AirPlayService.attachSurfaceFromUi(holder.surface)
+        AirPlayService.attachSurfaceFromUi(holder.surface, forceReconfigure = true)
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
