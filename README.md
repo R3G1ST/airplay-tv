@@ -18,7 +18,7 @@ Mirror an iPhone or Mac screen, or play Apple Music losslessly — without ads, 
 
 | Ready to connect | Apple Music |
 |---|---|
-| ![Idle](docs/screenshots/idle.png) | ![Now playing](docs/screenshots/music.png) |
+| ![Idle](docs/screenshots/idle-2.png) | ![Now playing](docs/screenshots/music-2.png) |
 
 | In the TV launcher | Mirroring |
 |---|---|

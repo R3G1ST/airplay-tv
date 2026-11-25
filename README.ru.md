@@ -18,7 +18,7 @@
 
 | Готов к подключению | Apple Music |
 |---|---|
-| ![Ожидание](docs/screenshots/idle.png) | ![Сейчас играет](docs/screenshots/music.png) |
+| ![Ожидание](docs/screenshots/idle-2.png) | ![Сейчас играет](docs/screenshots/music-2.png) |
 
 | В меню телевизора | Повтор экрана |
 |---|---|
