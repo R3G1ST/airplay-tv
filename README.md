@@ -27,7 +27,7 @@ Mirror an iPhone or Mac screen, or play Apple Music losslessly — without ads, 
 ## What it does
 
 - 📺 **Screen mirroring.** iPhone, iPad and Mac appear in *Screen Mirroring* and show the whole screen on the TV: video, apps, games, presentations.
-- 🎵 **Apple Music.** Lossless ALAC is decoded on the TV itself, bit-exactly. Cover art, title, artist, album and a live timeline are shown on screen.
+- 🎵 **Apple Music from iPhone and Mac.** Lossless ALAC is decoded on the TV itself, bit-exactly. Cover art, title, artist, album and a live timeline are shown on screen.
 - 🏷 **See who is casting.** The player and the mirroring badge show the sender's name: "iPhone (Nikita)" or "MacBook Air".
 - 🔉 **Volume is remembered.** A new cast starts at the level the previous one ended with, not at maximum. The phone still controls the volume and sees the real value.
 - 🔁 **It is part of the TV.** The receiver starts by itself after boot and after an update, appears when you cast, and goes back to the TV when the cast ends.
@@ -69,7 +69,8 @@ We would rather be honest than look bigger:
 
 **Apple Music**
 
-1. Play a track and tap the AirPlay icon **inside the Music app** (not Screen Mirroring).
+1. Play a track and tap the AirPlay icon **inside the Music app** on the iPhone or Mac (not Screen Mirroring).
+   On a Mac you can also click the AirPlay icon in the menu bar and pick the TV.
 2. The TV shows the cover, the title and the timeline.
 
 **Remote**

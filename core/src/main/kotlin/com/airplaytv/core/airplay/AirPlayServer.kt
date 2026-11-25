@@ -273,7 +273,11 @@ class AirPlayServer(
 
     fun raopTxt(): Map<String, String> = linkedMapOf(
         "ch" to "2",
-        "cn" to "3",
+        // Supported RAOP audio codecs: 1 = ALAC, 2 = AAC-LC, 3 = AAC-ELD.
+        // macOS Music reads this list before it starts an audio-only session;
+        // advertising only "3" made it refuse to connect at all, while the
+        // presence of ALAC (1) makes it stream losslessly.
+        "cn" to "1,2,3",
         "et" to "0,3,5",
         "vv" to "2",
         "ft" to "0x5A7FFEE6,0x0",

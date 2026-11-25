@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.1 — music from the Mac
+
+- Fixed Apple Music from macOS. The receiver advertised only AAC-ELD in the
+  RAOP `cn` list, so the Mac's Music app refused to start an audio-only
+  session. It now advertises the codecs it really decodes (`cn=1,2,3`:
+  ALAC, AAC-LC, AAC-ELD), and the Mac switches to it and streams lossless
+  ALAC with no underruns.
+- Screen mirroring and iPhone playback are unchanged: AirPlay 2 senders pick
+  their stream through SETUP and do not depend on `cn`.
+
 ## 1.6.0 — audit and cleanup
 
 - Removed the software-decoder fallback: on this TV it produced a green,
