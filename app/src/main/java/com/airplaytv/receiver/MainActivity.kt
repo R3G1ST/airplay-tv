@@ -206,6 +206,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         timeRemaining.fontFeatureSettings = "tnum"
     }
 
+    @android.annotation.SuppressLint("SetTextI18n")
     private fun buildUi() {
         root = FrameLayout(this)
         root.setBackgroundResource(R.drawable.bg_gradient)
@@ -373,6 +374,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { gravity = Gravity.CENTER_HORIZONTAL }
 
+    @android.annotation.SuppressLint("SetTextI18n")
     private fun buildNowPlaying() {
         // Apple TV style: full-bleed blurred artwork, large cover on the left,
         // typography and timeline on the right.
@@ -513,6 +515,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         applyDisplayFonts()
     }
 
+    @android.annotation.SuppressLint("SetTextI18n")
     private fun button(label: String, onClick: () -> Unit): TextView =
         TextView(this).apply {
             text = label
@@ -685,6 +688,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             .show()
     }
 
+    @android.annotation.SuppressLint("SetTextI18n")
     private fun render(state: AppState.Snapshot) {
         // Avoid the silly "AirPlay TV / AirPlay TV • AirPlay" when the device
         // keeps its default name.
@@ -903,6 +907,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }, 1200)
     }
 
+    @android.annotation.SuppressLint("SetTextI18n")
     private fun renderNowPlaying(state: AppState.Snapshot) {
         val sender = state.senderName.trim()
         sourcePill?.text = if (sender.isBlank()) "AirPlay" else sender.take(30)

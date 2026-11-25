@@ -1,7 +1,6 @@
 package com.airplaytv.receiver
 
 import android.media.MediaCodec
-import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.util.Log
 import android.view.Surface
@@ -13,6 +12,8 @@ import android.view.Surface
  */
 class VideoDecoder(
     private val onSizeChanged: (Int, Int) -> Unit,
+    /** Called once when the hardware decoder cannot produce any frame at all. */
+    private val onFatal: () -> Unit = {},
 ) {
     private val lock = Any()
     private var codec: MediaCodec? = null
@@ -29,9 +30,9 @@ class VideoDecoder(
     private var lastOutputAt = 0L
     private var lastInputAt = 0L
     @Volatile private var paused = false
-    private var forceSoftware = false
     private var stallCount = 0
     private var renderedAny = false
+    private var fatalReported = false
 
     fun setSurface(newSurface: Surface?, forceReconfigure: Boolean = false, fresh: Boolean = false) {
         synchronized(lock) {
@@ -130,12 +131,17 @@ class VideoDecoder(
             if (lastOutputAt > 0 && now - lastOutputAt > 5_000) {
                 stallCount++
                 Log.w(TAG, "decoder stalled for ${now - lastOutputAt}ms (stall #$stallCount, rendered=$renderedAny), recreating")
-                // Some TV codecs simply cannot decode a given stream (profile,
-                // slices, level). Never stay black forever: after two stalled
-                // hardware attempts fall back to the platform software decoder.
-                if (!renderedAny && stallCount >= 3 && !forceSoftware) {
-                    forceSoftware = true
-                    Log.w(TAG, "switching to the software H.264 decoder")
+                // A hardware decoder that never produced a single frame after
+                // three rebuilds cannot handle this stream. Give up honestly:
+                // the service drops the mirroring socket so the sender starts a
+                // clean session (with an IDR) instead of showing a black screen.
+                if (!renderedAny && stallCount >= 3) {
+                    if (!fatalReported) {
+                        fatalReported = true
+                        Log.e(TAG, "decoder cannot decode this stream, asking for a new session")
+                        onFatal()
+                    }
+                    return
                 }
                 recreateLocked()
             }
@@ -212,17 +218,17 @@ class VideoDecoder(
             // this Amlogic codec they made it accept input but never output a
             // frame (black picture). FPS is measured and logged instead.
             try {
-                format.setInteger(MediaFormat.KEY_PRIORITY, 0) // realtime
+                format.setInteger("priority", 0) // realtime
             } catch (_: Throwable) {
             }
             try {
                 // Known-good configuration for this vendor codec. It was removed
                 // once (to get more output buffers) and the decoder stopped
                 // producing frames, so it stays.
-                format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+                format.setInteger("low-latency", 1)
             } catch (_: Throwable) {
             }
-            val c = if (forceSoftware) createSoftwareDecoder() else MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            val c = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
             created = c
             c.configure(format, target, null, 0)
             c.start()
@@ -239,26 +245,6 @@ class VideoDecoder(
             // The surface died under us: wait for a fresh one from the activity.
             if (!target.isValid) surface = null
         }
-    }
-
-    /** First available software (Google) AVC decoder, used as a last resort. */
-    private fun createSoftwareDecoder(): MediaCodec {
-        try {
-            val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
-            for (info in list.codecInfos) {
-                if (info.isEncoder) continue
-                if (!info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) }) continue
-                val name = info.name
-                if (name.contains("google", ignoreCase = true) || name.contains("software", ignoreCase = true)) {
-                    try {
-                        return MediaCodec.createByCodecName(name)
-                    } catch (_: Throwable) {
-                    }
-                }
-            }
-        } catch (_: Throwable) {
-        }
-        return MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
     }
 
     private fun releaseCodecLocked() {
@@ -287,7 +273,7 @@ class VideoDecoder(
             releaseCodecLocked()
             stallCount = 0
             renderedAny = false
-            forceSoftware = false
+            fatalReported = false
             sps = null
             pps = null
             configuredWidth = 0

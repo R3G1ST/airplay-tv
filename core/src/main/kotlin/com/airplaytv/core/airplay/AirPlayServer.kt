@@ -182,6 +182,16 @@ class AirPlayServer(
         reportedVolumeDb = db
     }
 
+    /** Drops the current mirroring socket; the sender starts a fresh session. */
+    fun dropMirroring() {
+        mirror?.stop()
+        if (streaming) {
+            streaming = false
+            senderName = null
+            listener.onSessionEnded()
+        }
+    }
+
     /** True while the RTSP/HTTP server accepts connections. */
     val isListening: Boolean get() = http.isListening
     val deviceName: String get() = config.name

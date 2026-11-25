@@ -53,9 +53,15 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         // Start a new cast at the level the previous one ended with.
         audioPlayer.setInitialVolume(DeviceIdentity.lastVolume(this))
 
-        videoDecoder = VideoDecoder { width, height ->
-            AppState.update { it.copy(mirrorWidth = width, mirrorHeight = height) }
-        }
+        videoDecoder = VideoDecoder(
+            onSizeChanged = { width, height ->
+                AppState.update { it.copy(mirrorWidth = width, mirrorHeight = height) }
+            },
+            onFatal = {
+                Log.e(TAG, "video decoder failed, dropping the mirroring session")
+                if (::server.isInitialized) server.dropMirroring()
+            },
+        )
         pendingSurface?.let { videoDecoder.setSurface(it) }
 
         startForegroundNotification(deviceName)
@@ -417,7 +423,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         // 1) Usage stats: the moment the user last switched an app on the TV.
         //    (Needs the "Usage access" permission, granted once via adb/settings.)
         try {
-            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+            val usm = getSystemService("usagestats") as android.app.usage.UsageStatsManager
             val nowWall = System.currentTimeMillis()
             val events = usm.queryEvents(nowWall - 20_000, nowWall)
             val event = android.app.usage.UsageEvents.Event()

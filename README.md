@@ -8,7 +8,7 @@ Mirror an iPhone or Mac screen, or play Apple Music losslessly — without ads, 
 ![AirPlay TV](docs/screenshots/banner.png)
 
 ![Android 5.0+](https://img.shields.io/badge/Android-5.0%2B-3DDC84?logo=android&logoColor=white)
-![Size](https://img.shields.io/badge/APK-260%20KB-lightgrey)
+![Size](https://img.shields.io/badge/APK-303%20KB-lightgrey)
 ![No ads](https://img.shields.io/badge/ads-none-brightgreen)
 ![No tracking](https://img.shields.io/badge/tracking-none-brightgreen)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
@@ -28,9 +28,12 @@ Mirror an iPhone or Mac screen, or play Apple Music losslessly — without ads, 
 
 - 📺 **Screen mirroring.** iPhone, iPad and Mac appear in *Screen Mirroring* and show the whole screen on the TV: video, apps, games, presentations.
 - 🎵 **Apple Music.** Lossless ALAC is decoded on the TV itself, bit-exactly. Cover art, title, artist, album and a live timeline are shown on screen.
+- 🏷 **See who is casting.** The player and the mirroring badge show the sender's name: "iPhone (Nikita)" or "MacBook Air".
+- 🔉 **Volume is remembered.** A new cast starts at the level the previous one ended with, not at maximum. The phone still controls the volume and sees the real value.
 - 🔁 **It is part of the TV.** The receiver starts by itself after boot and after an update, appears when you cast, and goes back to the TV when the cast ends.
 - 🎮 **TV remote control.** OK pauses and resumes the music, left/right switch tracks.
 - 🖼 **Three screen formats.** Fit, fill, or fill-and-crop — for vertical videos and 4:3 content.
+- 🩺 **Self-healing.** A watchdog checks the receiver and mDNS every 30 seconds and restarts them if they died; after a Wi-Fi change the receiver re-announces itself on the network.
 
 ## What it does **not** do
 
@@ -46,12 +49,12 @@ We would rather be honest than look bigger:
 
 - Android TV or Google TV, **Android 5.0+**, any CPU (ARM, ARM64, x86).
 - The phone/Mac and the TV on the same local network (multicast must work — guest Wi-Fi with client isolation will not).
-- About **260 KB** of free space.
+- About **305 KB** of free space.
 
 ## Install
 
-1. Download `AirPlayTV-1.0.0.apk` from the [latest release](../../releases/latest).
-2. Install it on the TV: `adb install -r AirPlayTV-1.0.0.apk`, or copy it to a USB drive and open it with a file manager.
+1. Download the APK from the [latest release](../../releases/latest) — a file named `AirPlayTV-<version>.apk`.
+2. Install it on the TV: `adb install -r AirPlayTV-<version>.apk`, or copy it to a USB drive and open it with a file manager.
 3. Open the app once and allow two permissions when asked:
    - **Display over other apps** — so the receiver can come to the front when you cast;
    - **Usage access** — so it waits until you stop using the remote before taking the screen.
@@ -91,6 +94,8 @@ core/   protocol: mDNS, HTTP/RTSP, pairing, FairPlay, ALAC, H.264 depacketizer
 - screen mirroring: H.264 over TCP, AES-128-CTR, `MediaCodec` straight to the surface;
 - mirroring audio: AAC-ELD over RTP/UDP, with a reorder buffer and duplicate removal;
 - Apple Music: ALAC over RTP/UDP, decoded by our own bit-exact lossless decoder;
+- sender name and volume come from AirPlay's own plist messages; the volume is persisted;
+- the UI is set in Inter (Latin + Cyrillic subset, ~60 KB);
 - no native libraries: the APK has no `.so` files at all.
 
 ## Build

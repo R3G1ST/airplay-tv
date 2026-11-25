@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.6.0 — audit and cleanup
+
+- Removed the software-decoder fallback: on this TV it produced a green,
+  corrupted picture. After three impossible hardware rebuilds the receiver now
+  drops the mirroring socket so the sender starts a clean session instead of
+  leaving a black screen.
+- Removed dead code and unused resources (`ic_airplay`, `ic_launcher_192`), and
+  replaced API-level-gated `MediaFormat` constants with their string keys.
+- Android Lint is clean: 0 errors, 0 warnings.
+- Repository cleanup: only the current APK is kept in `dist/`; the README is
+  brought up to date (new UI, sender name, remembered volume, self-healing,
+  current size and install steps).
+
 ## 1.5.5
 
 - SurfaceView reuses the same Java Surface object after an activity restart while
