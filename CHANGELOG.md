@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.3
+
+- Volume handling is now precise: only the sender's automatic "0 dB" right after
+  connecting is dropped. A slider move within the first seconds is a real user
+  action and is applied immediately, so the cast always reacts to it.
+- The automatic-start-up window is 2.5 s and only applies once per session.
+
 ## 1.5.2
 
 - The receiver now reports its real volume to the sender. `GET_PARAMETER volume`

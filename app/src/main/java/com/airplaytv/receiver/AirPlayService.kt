@@ -538,7 +538,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         Log.i(TAG, "session started by ${deviceName ?: "unknown"}, remote idle ${msSinceUserActivity()}ms")
         if (!deviceName.isNullOrBlank()) AppState.update { it.copy(senderName = deviceName) }
         // Keep the remembered level for the first seconds and start from it.
-        volumeLockUntil = android.os.SystemClock.elapsedRealtime() + 3_000
+        volumeLockUntil = android.os.SystemClock.elapsedRealtime() + 2_500
+        volumeSettled = false
         val remembered = DeviceIdentity.lastVolume(this)
         audioPlayer.setInitialVolume(remembered)
         publishVolume(remembered)
@@ -848,6 +849,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
      * later change is treated as a real user action and applied.
      */
     private var volumeLockUntil = 0L
+    /** True once a real (non-automatic) volume value has been applied this session. */
+    private var volumeSettled = false
 
     private fun publishVolume(linear: Float) {
         val db = if (linear <= 0.0001f) -144f else (20.0 * Math.log10(linear.toDouble())).toFloat()
@@ -860,11 +863,17 @@ class AirPlayService : Service(), AirPlayServer.Listener {
 
     override fun onVolumeChanged(volumeDb: Float) {
         val now = android.os.SystemClock.elapsedRealtime()
-        if (now < volumeLockUntil) {
-            Log.i(TAG, "volume: ignoring start-up %.1f dB (keeping %.2f)"
-                .format(volumeDb, audioPlayer.volume()))
+        // Only the sender's automatic "maximum" right after connecting is
+        // dropped. Anything else — including a slider move within the first
+        // seconds — is a real user action and must be applied.
+        val automaticStartUp = !volumeSettled && now < volumeLockUntil &&
+            kotlin.math.abs(volumeDb) < 0.05f
+        if (automaticStartUp) {
+            Log.i(TAG, "volume: ignoring automatic start-up 0 dB (keeping %.2f)"
+                .format(audioPlayer.volume()))
             return
         }
+        volumeSettled = true
         val linear = Math.pow(10.0, volumeDb / 20.0).toFloat()
         Log.i(TAG, "volume: %.1f dB -> %.2f".format(volumeDb, linear))
         audioPlayer.setVolume(linear)
