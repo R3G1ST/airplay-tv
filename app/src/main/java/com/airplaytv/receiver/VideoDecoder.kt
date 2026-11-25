@@ -42,7 +42,9 @@ class VideoDecoder(
             }
 
             val c = codec
-            if (c != null && !forceReconfigure && previous != null) {
+            if (c != null && !forceReconfigure && previous != null &&
+                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M
+            ) {
                 try {
                     c.setOutputSurface(newSurface)
                     paused = false
@@ -153,7 +155,13 @@ class VideoDecoder(
         releaseCodecLocked()
         var created: MediaCodec? = null
         try {
-            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, configuredWidth.coerceAtLeast(1920), configuredHeight.coerceAtLeast(1080))
+            // Use the stream's real geometry: forcing 1920x1080 made small mirror
+            // sessions allocate (and scale) a much larger output buffer.
+            val format = MediaFormat.createVideoFormat(
+                MediaFormat.MIMETYPE_VIDEO_AVC,
+                configuredWidth.coerceIn(16, 8192),
+                configuredHeight.coerceIn(16, 8192),
+            )
             format.setByteBuffer("csd-0", java.nio.ByteBuffer.wrap(annexB(s)))
             format.setByteBuffer("csd-1", java.nio.ByteBuffer.wrap(annexB(p)))
             format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 4 * 1024 * 1024)

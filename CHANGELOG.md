@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.0 — stability and smoothness pass
+
+Full audit of the mirroring and music paths.
+
+- **Race fix**: a video thread from a previous stream could report "video ended"
+  right after a new stream started, ending the fresh session. Streams are now
+  generation-tagged.
+- **Android 5.0/5.1**: `MediaCodec.setOutputSurface` (API 23) is guarded, so the
+  receiver no longer crashes on old TVs when the window returns.
+- **Less jank**: the mirror receive buffer is reused instead of allocating one
+  array per frame (~60/s); the decoder uses the stream's real resolution instead
+  of forcing 1920x1080; the music timeline updates 4 times a second instead of
+  10; audio frames no longer touch the UI thread on every packet.
+- **Faster main thread**: the "remote idle" lookup (a system IPC) is cached for
+  one second instead of running on every tick and on every new session.
+- **Recovery**: if port 7000 is still held after an update, the receiver retries
+  instead of staying dead.
+
 ## 1.1.8
 
 - Fixed a black picture from macOS: a new mirroring SETUP could reuse the

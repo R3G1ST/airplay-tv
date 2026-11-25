@@ -78,6 +78,9 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         } catch (e: Throwable) {
             Log.e(TAG, "server start failed", e)
             AppState.update { it.copy(phase = AppState.Phase.ERROR, subtitle = "Порт 7000 занят") }
+            // The port can still be held by the previous instance for a few
+            // seconds after an update: retry instead of staying dead forever.
+            uiHandler.postDelayed({ retryServerStart() }, 3000)
             return
         }
 
@@ -92,6 +95,26 @@ class AirPlayService : Service(), AirPlayServer.Listener {
                 subtitle = "Ожидание подключения",
                 detail = "Откройте «Повтор экрана» на iPhone или Mac",
             )
+        }
+    }
+
+    private fun retryServerStart() {
+        if (instance !== this) return
+        try {
+            server.start()
+            acquireMulticastLock()
+            startMdns(DeviceIdentity.deviceId(this), DeviceIdentity.deviceName(this))
+            AppState.update {
+                it.copy(
+                    phase = AppState.Phase.IDLE,
+                    subtitle = "Ожидание подключения",
+                    detail = "Откройте «Повтор экрана» на iPhone или Mac",
+                )
+            }
+            Log.i(TAG, "receiver started on retry")
+        } catch (e: Throwable) {
+            Log.w(TAG, "port still busy, retrying")
+            uiHandler.postDelayed({ retryServerStart() }, 3000)
         }
     }
 
@@ -183,7 +206,13 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         val deviceId = DeviceIdentity.deviceId(this)
         val deviceName = DeviceIdentity.deviceName(this)
         server = AirPlayServer(
-            AirPlayServer.Config(name = deviceName, deviceId = deviceId, port = 7000),
+            AirPlayServer.Config(
+                name = deviceName,
+                deviceId = deviceId,
+                port = 7000,
+                displayWidth = resources.displayMetrics.widthPixels.coerceAtLeast(1280),
+                displayHeight = resources.displayMetrics.heightPixels.coerceAtLeast(720),
+            ),
             this,
         )
         server.start()
@@ -200,7 +229,24 @@ class AirPlayService : Service(), AirPlayServer.Listener {
      * How long ago the user last touched the remote. Uses the hidden
      * PowerManager API where available; MAX_VALUE means "unknown".
      */
+    @Volatile private var activityCacheAt = 0L
+    @Volatile private var activityCacheValue = Long.MAX_VALUE
+
     private fun msSinceUserActivity(): Long {
+        // This is called from the 2 s UI ticker and from every new session, and
+        // each call is an IPC into the system usage-stats service. One second of
+        // cache is invisible to the user and keeps the main thread light.
+        val cachedAt = activityCacheAt
+        if (cachedAt != 0L && android.os.SystemClock.elapsedRealtime() - cachedAt < 1000) {
+            return activityCacheValue
+        }
+        val value = queryMsSinceUserActivity()
+        activityCacheValue = value
+        activityCacheAt = android.os.SystemClock.elapsedRealtime()
+        return value
+    }
+
+    private fun queryMsSinceUserActivity(): Long {
         // 1) Usage stats: the moment the user last switched an app on the TV.
         //    (Needs the "Usage access" permission, granted once via adb/settings.)
         try {
@@ -428,7 +474,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
 
     override fun onAudioFrame(frame: ByteArray, ptsMicros: Long) {
         boostCurrentThread(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
-        launchUi()
+        // Called ~125 times a second: only touch the UI when it is actually hidden.
+        if (!MainActivity.isVisible) launchUi()
         if (!videoActive && AppState.snapshot.phase != AppState.Phase.PLAYING) {
             AppState.update {
                 it.copy(phase = AppState.Phase.PLAYING, subtitle = "AirPlay • музыка", detail = "Звук с iPhone")
@@ -530,14 +577,16 @@ class AirPlayService : Service(), AirPlayServer.Listener {
                 val snapshot = AppState.snapshot
                 if (snapshot.phase == AppState.Phase.PLAYING && snapshot.mirrorWidth == 0) {
                     publishProgress()
-                    uiHandler.postDelayed(this, 100)
+                    // Four updates a second is smooth for a progress bar and
+                    // avoids ten full UI state passes per second.
+                    uiHandler.postDelayed(this, 250)
                 } else {
                     progressTicker = null
                 }
             }
         }
         progressTicker = ticker
-        uiHandler.postDelayed(ticker, 100)
+        uiHandler.postDelayed(ticker, 250)
     }
 
     private fun stopProgressTicker() {

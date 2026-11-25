@@ -506,10 +506,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun render(state: AppState.Snapshot) {
-        deviceText.text = if (state.deviceName.isNotBlank()) {
-            "${state.deviceName} • AirPlay"
-        } else {
-            "AirPlay"
+        // Avoid the silly "AirPlay TV / AirPlay TV • AirPlay" when the device
+        // keeps its default name.
+        val name = state.deviceName.trim()
+        deviceText.text = when {
+            name.isBlank() || name.equals("AirPlay TV", ignoreCase = true) -> "Приёмник AirPlay"
+            else -> "$name • AirPlay"
         }
         statusText.text = when (state.phase) {
             AppState.Phase.IDLE -> "Готов к подключению"

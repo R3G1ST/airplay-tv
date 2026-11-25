@@ -45,6 +45,13 @@ class MirrorStream(
     @Volatile private var aesIv: ByteArray? = null
     private var streamConnectionId: Long = 0
 
+    /**
+     * Bumped on every start(). An accept/read thread from a previous stream must
+     * not report "video ended" after the new stream has already begun: that used
+     * to end a fresh session and leave the sender thinking it was connected.
+     */
+    @Volatile private var generation = 0
+
     val localPort: Int get() = serverSocket?.localPort ?: 0
 
     /**
@@ -83,7 +90,8 @@ class MirrorStream(
         ss.bind(InetSocketAddress(0), 1)
         serverSocket = ss
         running = true
-        acceptThread = Thread({ acceptLoop(ss) }, "airplay-mirror-accept").apply {
+        val gen = ++generation
+        acceptThread = Thread({ acceptLoop(ss, gen) }, "airplay-mirror-accept").apply {
             isDaemon = true
             start()
         }
@@ -94,6 +102,7 @@ class MirrorStream(
     @Synchronized
     fun stop() {
         running = false
+        generation++ // invalidate every thread of the stopped stream
         try {
             serverSocket?.close()
         } catch (_: IOException) {
@@ -109,8 +118,8 @@ class MirrorStream(
         Log.i(TAG, "mirror stream stopped")
     }
 
-    private fun acceptLoop(ss: ServerSocket) {
-        while (running) {
+    private fun acceptLoop(ss: ServerSocket, gen: Int) {
+        while (running && gen == generation) {
             val socket = try {
                 ss.accept()
             } catch (e: IOException) {
@@ -129,7 +138,7 @@ class MirrorStream(
                 // A static screen still sends a streaming report every second,
                 // so 15 s of total silence means the link is dead, not idle.
                 socket.soTimeout = SOCKET_IDLE_TIMEOUT_MS
-                readLoop(socket)
+                readLoop(socket, gen)
             } catch (e: java.net.SocketTimeoutException) {
                 Log.w(TAG, "video stream silent for ${SOCKET_IDLE_TIMEOUT_MS / 1000}s, dropping the connection")
             } catch (e: java.io.EOFException) {
@@ -141,13 +150,13 @@ class MirrorStream(
                     socket.close()
                 } catch (_: IOException) {
                 }
-                client = null
-                if (running) sink.onVideoEnded()
+                if (gen == generation) client = null
+                if (running && gen == generation) sink.onVideoEnded()
             }
         }
     }
 
-    private fun readLoop(socket: Socket) {
+    private fun readLoop(socket: Socket, gen: Int) {
         val input = socket.getInputStream()
         val header = ByteArray(128)
         val key = aesKey ?: error("mirror stream started without key")
@@ -156,8 +165,9 @@ class MirrorStream(
         var firstPts: Long? = null
         var frameCount = 0L
         var badFraming = 0L
+        var readBuffer = ByteArray(64 * 1024)
 
-        while (running) {
+        while (running && gen == generation) {
             readFully(input, header, 128)
             val payloadSize = Bytes.le32(header, 0)
             val payloadType = Bytes.u8(header, 4)
@@ -165,13 +175,15 @@ class MirrorStream(
                 Log.w(TAG, "invalid mirror payload size $payloadSize, dropping connection")
                 return
             }
-            val payload = ByteArray(payloadSize)
-            readFully(input, payload, payloadSize)
+            // Reuse the receive buffer: at 60 fps a fresh array per packet is a
+            // steady stream of garbage and the main source of GC pauses here.
+            if (readBuffer.size < payloadSize) readBuffer = ByteArray(payloadSize)
+            readFully(input, readBuffer, payloadSize)
 
             when (payloadType) {
                 0 -> {
                     if (payloadSize < 4) continue
-                    val decrypted = ctr.process(payload)
+                    val decrypted = ctr.process(readBuffer, 0, payloadSize)
                     // Convert length-prefixed NAL units to Annex-B start codes in place.
                     var offset = 0
                     var ok = true
@@ -209,7 +221,7 @@ class MirrorStream(
                 }
                 1 -> {
                     // Not encrypted: codec configuration block with SPS/PPS.
-                    parseConfig(payload, header)
+                    parseConfig(readBuffer, payloadSize, header)
                 }
                 5 -> Unit // once-per-second "streaming report", nothing to decode
                 else -> Log.d(TAG, "ignoring mirror payload type $payloadType (${payloadSize}b)")
@@ -217,14 +229,14 @@ class MirrorStream(
         }
     }
 
-    private fun parseConfig(payload: ByteArray, header: ByteArray) {
+    private fun parseConfig(payload: ByteArray, length: Int, header: ByteArray) {
         try {
-            if (payload.size < 10) {
-                Log.w(TAG, "video config too short: ${payload.size}b ${Bytes.hex(payload)}")
+            if (length < 10) {
+                Log.w(TAG, "video config too short: ${length}b ${Bytes.hex(payload.copyOf(length))}")
                 return
             }
             val spsSize = ((payload[6].toInt() and 0xff) shl 8) or (payload[7].toInt() and 0xff)
-            if (spsSize <= 0 || spsSize > 4096 || 8 + spsSize + 3 > payload.size) {
+            if (spsSize <= 0 || spsSize > 4096 || 8 + spsSize + 3 > length) {
                 Log.w(TAG, "bad SPS size $spsSize")
                 return
             }
@@ -232,7 +244,7 @@ class MirrorStream(
             val ppsLenOffset = 8 + spsSize
             val ppsSize = ((payload[ppsLenOffset + 1].toInt() and 0xf8) +
                 (payload[ppsLenOffset + 2].toInt() and 0xff)) and 0xff
-            if (ppsSize <= 0 || ppsSize > 4096 || ppsLenOffset + 3 + ppsSize > payload.size) {
+            if (ppsSize <= 0 || ppsSize > 4096 || ppsLenOffset + 3 + ppsSize > length) {
                 Log.w(TAG, "bad PPS size $ppsSize")
                 return
             }
