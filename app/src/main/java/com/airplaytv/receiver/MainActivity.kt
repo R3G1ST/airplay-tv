@@ -733,17 +733,18 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         // previous cover stays on screen: no placeholder, no flicker.
     }
 
+    private var applyingAspect = false
+
     private fun applyAspect() {
+        if (applyingAspect) return
         val width = videoWidth
         val height = videoHeight
         if (width <= 0 || height <= 0) return
         val container = root.width.takeIf { it > 0 } ?: return
         val containerHeight = root.height.takeIf { it > 0 } ?: return
+
         val videoRatio = width.toFloat() / height.toFloat()
         val containerRatio = container.toFloat() / containerHeight.toFloat()
-        val lp = surfaceView.layoutParams as FrameLayout.LayoutParams
-
-        // Letterboxed ("contain") size.
         val fitWidth: Int
         val fitHeight: Int
         if (videoRatio > containerRatio) {
@@ -754,37 +755,43 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             fitWidth = (containerHeight * videoRatio).toInt()
         }
 
-        surfaceView.scaleX = 1f
-        surfaceView.scaleY = 1f
-        surfaceView.pivotX = 0f
-        surfaceView.pivotY = 0f
-
+        var targetWidth = fitWidth
+        var targetHeight = fitHeight
+        var targetScale = 1f
         when (aspectMode) {
-            1 -> { // stretch: fill the screen, geometry is not preserved
-                lp.width = container
-                lp.height = containerHeight
+            1 -> {
+                targetWidth = container
+                targetHeight = containerHeight
             }
-            2 -> { // zoom: fill the screen and crop the overflow
-                lp.width = fitWidth
-                lp.height = fitHeight
-                val scale = maxOf(
+            2 -> {
+                targetScale = maxOf(
                     container.toFloat() / fitWidth.toFloat(),
                     containerHeight.toFloat() / fitHeight.toFloat(),
-                )
-                if (scale > 1f) {
-                    surfaceView.pivotX = fitWidth / 2f
-                    surfaceView.pivotY = fitHeight / 2f
-                    surfaceView.scaleX = scale
-                    surfaceView.scaleY = scale
-                }
-            }
-            else -> { // fit: keep aspect, black bars where needed
-                lp.width = fitWidth
-                lp.height = fitHeight
+                ).coerceAtLeast(1f)
             }
         }
-        lp.gravity = Gravity.CENTER
-        surfaceView.layoutParams = lp
+
+        val lp = surfaceView.layoutParams as FrameLayout.LayoutParams
+        val same = lp.width == targetWidth && lp.height == targetHeight &&
+            surfaceView.scaleX == targetScale && lp.gravity == Gravity.CENTER
+        if (same) return
+
+        // Guard against the layout listener re-entering this method: changing
+        // layoutParams schedules another layout, which would loop forever and
+        // starve the video surface.
+        applyingAspect = true
+        try {
+            lp.width = targetWidth
+            lp.height = targetHeight
+            lp.gravity = Gravity.CENTER
+            surfaceView.layoutParams = lp
+            surfaceView.pivotX = targetWidth / 2f
+            surfaceView.pivotY = targetHeight / 2f
+            surfaceView.scaleX = targetScale
+            surfaceView.scaleY = targetScale
+        } finally {
+            applyingAspect = false
+        }
         updateAspectButton()
     }
 

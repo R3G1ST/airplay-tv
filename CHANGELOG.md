@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.8
+
+- Fixed a layout feedback loop: the layout listener re-applied the surface size,
+  which scheduled another layout, forever. The surface was being resized
+  continuously, which starved the decoder and produced a black first attempt.
+
 ## 1.0.7
 
 - If the receiver screen is minimised during a cast, it comes back by itself
