@@ -38,6 +38,9 @@ class MirrorStream(
     private var acceptThread: Thread? = null
     private var client: Socket? = null
 
+    @Volatile var lastFrameAtMs: Long = 0
+        private set
+
     @Volatile private var aesKey: ByteArray? = null
     @Volatile private var aesIv: ByteArray? = null
 
@@ -116,10 +119,12 @@ class MirrorStream(
                     socket.receiveBufferSize = 2 * 1024 * 1024
                 } catch (_: Throwable) {
                 }
-                // No read timeout: a static screen legitimately produces long
-                // pauses, and a timeout here used to kill healthy sessions.
-                socket.soTimeout = 0
+                // A static screen still sends a streaming report every second,
+                // so 15 s of total silence means the link is dead, not idle.
+                socket.soTimeout = SOCKET_IDLE_TIMEOUT_MS
                 readLoop(socket)
+            } catch (e: java.net.SocketTimeoutException) {
+                Log.w(TAG, "video stream silent for ${SOCKET_IDLE_TIMEOUT_MS / 1000}s, dropping the connection")
             } catch (e: java.io.EOFException) {
                 Log.d(TAG, "mirroring client disconnected")
             } catch (e: Throwable) {
@@ -182,10 +187,11 @@ class MirrorStream(
                     val base = firstPts ?: rawPts.also { firstPts = it }
                     val pts = (rawPts - base).coerceAtLeast(0)
                     frameCount++
+                    lastFrameAtMs = System.nanoTime() / 1_000_000L
                     if (frameCount == 1L) {
                         Log.i(TAG, "first video frame: ${decrypted.size}b, naluType=${Bytes.u8(decrypted, 4) and 0x1f}, pts=$pts")
                     } else if (frameCount % 300 == 0L) {
-                        Log.d(TAG, "video frames: $frameCount, last ${decrypted.size}b")
+                        Log.i(TAG, "video frames: $frameCount, last ${decrypted.size}b")
                     }
                     sink.onVideoFrame(decrypted, pts)
                 }
@@ -251,5 +257,6 @@ class MirrorStream(
 
     companion object {
         private const val TAG = "MirrorStream"
+        private const val SOCKET_IDLE_TIMEOUT_MS = 15_000
     }
 }

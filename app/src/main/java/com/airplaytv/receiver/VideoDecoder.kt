@@ -67,6 +67,12 @@ class VideoDecoder(
                         buffer.clear()
                         buffer.put(data)
                         c.queueInputBuffer(index, 0, data.size, ptsMicros, 0)
+                        lastInputAt = android.os.SystemClock.elapsedRealtime()
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (lastOutputAt > 0 && now - lastOutputAt > 5_000) {
+                            Log.w(TAG, "decoder stalled: input flowing but no output for ${now - lastOutputAt}ms")
+                            lastOutputAt = now
+                        }
                         break
                     }
                     if (++attempts > 40) {
@@ -84,6 +90,8 @@ class VideoDecoder(
     }
 
     private var rendered = 0L
+    private var lastOutputAt = 0L
+    private var lastInputAt = 0L
     private var dropped = 0L
 
     private fun drainLocked(c: MediaCodec) {
@@ -92,6 +100,7 @@ class VideoDecoder(
             when {
                 index >= 0 -> {
                     if (rendered++ == 0L) Log.i(TAG, "first decoded frame rendered (${bufferInfo.size}b)")
+                    lastOutputAt = android.os.SystemClock.elapsedRealtime()
                     c.releaseOutputBuffer(index, true)
                 }
                 index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {

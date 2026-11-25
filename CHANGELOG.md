@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.3
+
+- The video stream now has a 15 s silence watchdog: a stalled connection is
+  dropped instead of leaving the sender "connected" with a frozen picture.
+- Heartbeat every ~5 s (`video frames: N`) and a decoder-stall warning, so a
+  freeze can be diagnosed from the log.
+
 ## 1.0.2
 
 - Fixed the black screen on the first connection: a released (or reused)
