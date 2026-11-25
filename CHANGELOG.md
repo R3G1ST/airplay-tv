@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.1
+
+- Fix: the start-up volume lock from 1.5.0 was not actually compiled in (the
+  patch failed silently). Senders that push 0 dB right after connecting no
+  longer slam the TV to full volume; the remembered level is kept for the first
+  3 seconds, later changes are honoured.
+
+## 1.5.0
+
+- The receiver no longer jumps to full volume on reconnect: senders push their
+  own volume (usually 0 dB) right after a cast starts, and that automatic value
+  is now ignored for the first 3 seconds. The remembered level is applied
+  instead. Any later volume change is a real user action and is honoured.
+
 ## 1.4.9
 
 - The AirPlay volume is remembered: a new cast starts at the level the previous

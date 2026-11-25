@@ -537,6 +537,9 @@ class AirPlayService : Service(), AirPlayServer.Listener {
     override fun onSessionStarted(deviceName: String?) {
         Log.i(TAG, "session started by ${deviceName ?: "unknown"}, remote idle ${msSinceUserActivity()}ms")
         if (!deviceName.isNullOrBlank()) AppState.update { it.copy(senderName = deviceName) }
+        // Keep the remembered level for the first seconds and start from it.
+        volumeLockUntil = android.os.SystemClock.elapsedRealtime() + 3_000
+        audioPlayer.setInitialVolume(DeviceIdentity.lastVolume(this))
         acquireWifiLock()
         acquireCpuLock()
         launchUi(force = true)
@@ -836,11 +839,25 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         dacp?.send("previtem")
     }
 
+    /**
+     * Right after a cast starts, senders push their own volume (usually 0 dB) on
+     * their own initiative. That used to slam the TV to full volume on every
+     * reconnect. For a short window the receiver keeps its remembered level; any
+     * later change is treated as a real user action and applied.
+     */
+    private var volumeLockUntil = 0L
+
     private val persistVolume = Runnable {
         DeviceIdentity.setLastVolume(this, audioPlayer.volume())
     }
 
     override fun onVolumeChanged(volumeDb: Float) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now < volumeLockUntil) {
+            Log.i(TAG, "volume: ignoring start-up %.1f dB (keeping %.2f)"
+                .format(volumeDb, audioPlayer.volume()))
+            return
+        }
         val linear = Math.pow(10.0, volumeDb / 20.0).toFloat()
         Log.i(TAG, "volume: %.1f dB -> %.2f".format(volumeDb, linear))
         audioPlayer.setVolume(linear)

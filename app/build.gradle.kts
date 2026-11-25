@@ -11,8 +11,8 @@ android {
         applicationId = "com.airplaytv.receiver"
         minSdk = 21
         targetSdk = 35
-        versionCode = 42
-        versionName = "1.4.9"
+        versionCode = 44
+        versionName = "1.5.1"
     }
 
     signingConfigs {
