@@ -117,6 +117,29 @@ class AirPlayServer(
 
     private val clients = java.util.concurrent.ConcurrentHashMap<String, ClientState>()
 
+    /**
+     * One sender owns the screen. A different device that starts a session takes
+     * it over, even when it skips pair-setup (a previously paired phone often
+     * goes straight to pair-verify), which used to leave a stuck session alive.
+     */
+    private fun preemptIfNeeded(request: Request) {
+        val ip = request.remoteAddress.hostAddress ?: "unknown"
+        val previous = activeClientIp
+        if (previous != null && previous != ip) {
+            Log.i(TAG, "new sender $ip preempts $previous")
+            stopStreams()
+            synchronized(lock) {
+                aesKey = null
+                aesIv = null
+            }
+            if (streaming) {
+                streaming = false
+                listener.onSessionEnded()
+            }
+        }
+        activeClientIp = ip
+    }
+
     private fun client(request: Request): ClientState {
         val key = request.remoteAddress.hostAddress ?: "unknown"
         return clients.getOrPut(key) { ClientState() }
@@ -242,7 +265,7 @@ class AirPlayServer(
             request.method == "OPTIONS" ->
                 response.header("Public", "SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER")
             request.method == "SETUP" -> handleSetup(request, response)
-            request.method == "RECORD" -> handleRecord(response)
+            request.method == "RECORD" -> handleRecord(request, response)
             request.method == "POST" && path == "/play" -> handlePlay(request, response)
             request.method == "POST" && path == "/stop" -> handleStopVideo(response)
             request.method == "POST" && path == "/rate" -> handleRate(request, response)
@@ -343,25 +366,7 @@ class AirPlayServer(
             response.reason = "Bad Request"
             return
         }
-        // A new pairing means a new cast: preempt whatever was streaming before
-        // (an Apple TV behaves the same way — one sender owns the screen).
-        val ip = request.remoteAddress.hostAddress ?: "unknown"
-        val previous = activeClientIp
-        // Only a *different* device preempts: the same sender opens extra
-        // connections (events, audio) and some of them re-pair mid-session.
-        if (previous != null && previous != ip) {
-            Log.i(TAG, "new sender $ip preempts $previous")
-            stopStreams()
-            synchronized(lock) {
-                aesKey = null
-                aesIv = null
-            }
-            if (streaming) {
-                streaming = false
-                listener.onSessionEnded()
-            }
-        }
-        activeClientIp = ip
+        preemptIfNeeded(request)
         val st = client(request)
         synchronized(lock) {
             st.pairingStatus = PairingStatus.SETUP
@@ -519,6 +524,7 @@ class AirPlayServer(
     // ----------------------------------------------------------------- SETUP
 
     private fun handleSetup(request: Request, response: Response) {
+        preemptIfNeeded(request)
         val root = try {
             Plist.parse(request.body)
         } catch (e: Throwable) {
@@ -835,7 +841,8 @@ class AirPlayServer(
 
     // ---------------------------------------------------------------- RECORD
 
-    private fun handleRecord(response: Response) {
+    private fun handleRecord(request: Request, response: Response) {
+        preemptIfNeeded(request)
         response.header("Audio-Latency", "11025")
         response.header("Audio-Jack-Status", "connected; type=analog")
         sessionCounter.incrementAndGet()

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- A new sender now takes over the screen on any new SETUP/RECORD, not only on
+  pair-setup. A phone that skips pair-setup (already paired) used to leave a
+  stuck Mac session on screen and its music cover never appeared.
+- Decoder self-heal no longer reuses a released codec (that caused
+  "codec is released already" and endless re-creation).
+
 ## 1.0.9
 
 - Decoder watchdog: if frames keep arriving but the codec produces no output for

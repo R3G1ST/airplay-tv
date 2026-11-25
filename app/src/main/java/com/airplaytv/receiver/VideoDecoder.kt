@@ -21,6 +21,10 @@ class VideoDecoder(
     private var configuredWidth = 0
     private var configuredHeight = 0
     private val bufferInfo = MediaCodec.BufferInfo()
+    private var rendered = 0L
+    private var dropped = 0L
+    private var lastOutputAt = 0L
+    private var lastInputAt = 0L
 
     fun setSurface(newSurface: Surface?, forceReconfigure: Boolean = false) {
         synchronized(lock) {
@@ -61,6 +65,7 @@ class VideoDecoder(
     fun submit(data: ByteArray, ptsMicros: Long) {
         synchronized(lock) {
             val c = codec ?: return
+            var fed = false
             try {
                 var attempts = 0
                 while (true) {
@@ -71,14 +76,7 @@ class VideoDecoder(
                         buffer.put(data)
                         c.queueInputBuffer(index, 0, data.size, ptsMicros, 0)
                         lastInputAt = android.os.SystemClock.elapsedRealtime()
-                        val now = android.os.SystemClock.elapsedRealtime()
-                        if (lastOutputAt > 0 && now - lastOutputAt > 3_000) {
-                            Log.w(TAG, "decoder stalled for ${now - lastOutputAt}ms, recreating")
-                            lastOutputAt = now
-                            // Self-heal: some TV codecs stop producing frames after
-                            // a surface change. Recreate and continue.
-                            configureLocked()
-                        }
+                        fed = true
                         break
                     }
                     if (++attempts > 40) {
@@ -87,18 +85,32 @@ class VideoDecoder(
                         break
                     }
                 }
-                drainLocked(c)
+                if (fed) drainLocked(c)
             } catch (e: Throwable) {
                 Log.e(TAG, "decode error", e)
-                configureLocked()
+                recreateLocked()
+                return
+            }
+
+            // Self-heal: some TV codecs stop producing output after the surface
+            // changed, even while input keeps flowing. Recreate, but never reuse
+            // the released codec (the old code did, which threw
+            // "codec is released already" in an endless loop).
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (lastOutputAt > 0 && now - lastOutputAt > 5_000) {
+                Log.w(TAG, "decoder stalled for ${now - lastOutputAt}ms, recreating")
+                recreateLocked()
             }
         }
     }
 
-    private var rendered = 0L
-    private var lastOutputAt = 0L
-    private var lastInputAt = 0L
-    private var dropped = 0L
+    /** Recreates the codec with the current surface and stream config. */
+    private fun recreateLocked() {
+        releaseCodecLocked()
+        configureLocked()
+        lastOutputAt = android.os.SystemClock.elapsedRealtime()
+        lastInputAt = lastOutputAt
+    }
 
     private fun drainLocked(c: MediaCodec) {
         while (true) {
@@ -149,6 +161,7 @@ class VideoDecoder(
             c.configure(format, target, null, 0)
             c.start()
             codec = c
+            lastOutputAt = android.os.SystemClock.elapsedRealtime()
             Log.i(TAG, "H.264 decoder started (${configuredWidth}x$configuredHeight)")
         } catch (e: Throwable) {
             Log.e(TAG, "cannot start H.264 decoder", e)
