@@ -136,6 +136,10 @@ class AirPlayServer(
                 streaming = false
                 listener.onSessionEnded()
             }
+            try {
+                http.closeConnectionsFrom(java.net.InetAddress.getByName(previous))
+            } catch (_: Throwable) {
+            }
         }
         activeClientIp = ip
     }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.3
+
+- The decoder is no longer destroyed when the receiver is hidden. It keeps
+  running off-screen and, on return, its output surface is switched with
+  `setOutputSurface`, so the picture resumes instantly instead of waiting for a
+  keyframe that a static Mac screen may never send.
+- Preempting a sender now also closes its connections, so the old device stops
+  showing "connected".
+
 ## 1.1.2
 
 - The auto-return ticker no longer re-launches the activity when it is already

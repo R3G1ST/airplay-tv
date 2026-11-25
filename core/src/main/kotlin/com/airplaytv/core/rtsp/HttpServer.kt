@@ -94,6 +94,18 @@ class HttpServer(
         acceptThread = null
     }
 
+    /** Closes every connection opened by a given address (used when preempting a sender). */
+    fun closeConnectionsFrom(address: java.net.InetAddress) {
+        for (c in clients) {
+            if (c.inetAddress == address) {
+                try {
+                    c.close()
+                } catch (_: IOException) {
+                }
+            }
+        }
+    }
+
     private fun acceptLoop(ss: ServerSocket) {
         while (running) {
             val socket = try {

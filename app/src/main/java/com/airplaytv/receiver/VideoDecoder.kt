@@ -25,26 +25,36 @@ class VideoDecoder(
     private var dropped = 0L
     private var lastOutputAt = 0L
     private var lastInputAt = 0L
+    @Volatile private var paused = false
 
     fun setSurface(newSurface: Surface?, forceReconfigure: Boolean = false) {
         synchronized(lock) {
-            if (newSurface != null && !newSurface.isValid) {
-                // Surfaces from a stopped activity stay referenced but are dead;
-                // configuring a decoder with one throws "surface has been released".
+            if (newSurface != null && !newSurface.isValid) return
+            val previous = surface
+            surface = newSurface
+
+            if (newSurface == null) {
+                // Keep the codec alive (and its reference frames) but stop
+                // rendering: destroying it here forced a full re-sync on return,
+                // and the sender may not send a keyframe for a long time.
+                paused = true
                 return
             }
-            // SurfaceView reuses the same Surface object after it has been
-            // destroyed and recreated, so comparing by reference is wrong: a
-            // decoder that failed earlier would never be retried.
-            surface = newSurface
-            if (newSurface == null) {
-                releaseCodecLocked()
-            } else if (codec == null || forceReconfigure) {
-                // A surface that comes back after the activity was hidden must
-                // get a fresh decoder: the old one may be attached to a dead
-                // surface and would silently render nothing.
-                configureLocked()
+
+            val c = codec
+            if (c != null && !forceReconfigure && previous != null) {
+                try {
+                    c.setOutputSurface(newSurface)
+                    paused = false
+                    lastOutputAt = android.os.SystemClock.elapsedRealtime()
+                    Log.i(TAG, "switched the decoder to the new surface")
+                    return
+                } catch (e: Throwable) {
+                    Log.w(TAG, "setOutputSurface failed: ${e.message}")
+                }
             }
+            paused = false
+            if (c == null || forceReconfigure) configureLocked()
         }
     }
 
@@ -85,7 +95,7 @@ class VideoDecoder(
                         break
                     }
                 }
-                if (fed) drainLocked(c)
+                if (fed) drainLocked(c, render = !paused)
             } catch (e: Throwable) {
                 Log.e(TAG, "decode error", e)
                 recreateLocked()
@@ -112,14 +122,14 @@ class VideoDecoder(
         lastInputAt = lastOutputAt
     }
 
-    private fun drainLocked(c: MediaCodec) {
+    private fun drainLocked(c: MediaCodec, render: Boolean = true) {
         while (true) {
             val index = c.dequeueOutputBuffer(bufferInfo, 0)
             when {
                 index >= 0 -> {
                     if (rendered++ == 0L) Log.i(TAG, "first decoded frame rendered (${bufferInfo.size}b)")
                     lastOutputAt = android.os.SystemClock.elapsedRealtime()
-                    c.releaseOutputBuffer(index, true)
+                    c.releaseOutputBuffer(index, render)
                 }
                 index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     val f = c.outputFormat
@@ -188,15 +198,16 @@ class VideoDecoder(
         }
     }
 
-    /** Stops decoding but keeps SPS/PPS so the stream can resume without a new config. */
+    /** Stops rendering but keeps the codec and its reference frames alive. */
     fun pause() {
         synchronized(lock) {
-            releaseCodecLocked()
+            paused = true
         }
     }
 
     fun release() {
         synchronized(lock) {
+            paused = false
             releaseCodecLocked()
             sps = null
             pps = null
