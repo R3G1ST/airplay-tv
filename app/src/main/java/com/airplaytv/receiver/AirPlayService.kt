@@ -654,6 +654,10 @@ class AirPlayService : Service(), AirPlayServer.Listener {
     private fun lastArtworkFile() = java.io.File(filesDir, "last_artwork.img")
 
     private fun persistTrack(title: String?, artist: String?, album: String?) {
+        // Apple Music sometimes sends an empty DMAP update (radio, system audio).
+        // It must not erase the last real track: that is what the receiver shows
+        // on the next paused connect.
+        if (title.isNullOrBlank() && artist.isNullOrBlank() && album.isNullOrBlank()) return
         try {
             lastTrackFile().writeText(listOf(title ?: "", artist ?: "", album ?: "").joinToString("\u0001"))
         } catch (_: Throwable) {
@@ -685,14 +689,24 @@ class AirPlayService : Service(), AirPlayServer.Listener {
     }
 
     override fun onTrackMetadata(title: String?, artist: String?, album: String?) {
+        if (title.isNullOrBlank() && artist.isNullOrBlank() && album.isNullOrBlank()) {
+            Log.i(TAG, "metadata: empty update ignored")
+            return
+        }
+        val current = AppState.snapshot
+        val nextTitle = title ?: current.trackTitle
+        val nextArtist = artist ?: current.trackArtist
+        val nextAlbum = album ?: current.trackAlbum
+        if (nextTitle == current.trackTitle && nextArtist == current.trackArtist &&
+            nextAlbum == current.trackAlbum
+        ) {
+            // Apple Music repeats the same block about once a second.
+            return
+        }
         Log.i(TAG, "metadata: title=$title artist=$artist album=$album")
         persistTrack(title, artist, album)
         AppState.update {
-            it.copy(
-                trackTitle = title ?: it.trackTitle,
-                trackArtist = artist ?: it.trackArtist,
-                trackAlbum = album ?: it.trackAlbum,
-            )
+            it.copy(trackTitle = nextTitle, trackArtist = nextArtist, trackAlbum = nextAlbum)
         }
     }
 

@@ -122,7 +122,7 @@ class VideoDecoder(
                 // Some TV codecs simply cannot decode a given stream (profile,
                 // slices, level). Never stay black forever: after two stalled
                 // hardware attempts fall back to the platform software decoder.
-                if (!renderedAny && stallCount >= 2 && !forceSoftware) {
+                if (!renderedAny && stallCount >= 3 && !forceSoftware) {
                     forceSoftware = true
                     Log.w(TAG, "switching to the software H.264 decoder")
                 }
@@ -150,6 +150,9 @@ class VideoDecoder(
                     }
                     stallCount = 0
                     lastOutputAt = android.os.SystemClock.elapsedRealtime()
+                    // Immediate presentation. Scheduling with releaseOutputBuffer's
+                    // timestamp made this vendor codec hold frames far too long
+                    // (half a second of input lag), so it is not used.
                     c.releaseOutputBuffer(index, render)
                     if (render) {
                         fpsFrames++
@@ -202,8 +205,9 @@ class VideoDecoder(
             } catch (_: Throwable) {
             }
             try {
-                // Screen mirroring wants the shortest possible pipeline; the
-                // decoder still buffers one frame for reference.
+                // Known-good configuration for this vendor codec. It was removed
+                // once (to get more output buffers) and the decoder stopped
+                // producing frames, so it stays.
                 format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
             } catch (_: Throwable) {
             }
@@ -213,7 +217,7 @@ class VideoDecoder(
             c.start()
             codec = c
             lastOutputAt = android.os.SystemClock.elapsedRealtime()
-            Log.i(TAG, "H.264 decoder started (${configuredWidth}x$configuredHeight)")
+            Log.i(TAG, "H.264 decoder started (${configuredWidth}x$configuredHeight) via ${c.name}")
         } catch (e: Throwable) {
             Log.e(TAG, "cannot start H.264 decoder", e)
             codec = null

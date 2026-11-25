@@ -304,7 +304,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.START
+            gravity = Gravity.CENTER_HORIZONTAL
         }
         row.addView(column, LinearLayout.LayoutParams(dp(520), ViewGroup.LayoutParams.WRAP_CONTENT))
 
@@ -322,7 +322,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         column.addView(pill, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { bottomMargin = dp(22) })
+        ).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            bottomMargin = dp(22)
+        })
 
         trackTitle = TextView(this).apply {
             setTextColor(Color.WHITE)
@@ -350,6 +353,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
         progressBar = TimelineView(this)
         column.addView(progressBar, LinearLayout.LayoutParams(dp(484), dp(6)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
             topMargin = dp(34)
         })
 
@@ -369,6 +373,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         timeRow.addView(timeElapsed, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         timeRow.addView(timeRemaining, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         column.addView(timeRow, LinearLayout.LayoutParams(dp(484), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
             topMargin = dp(10)
         })
 
@@ -717,9 +722,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun renderNowPlaying(state: AppState.Snapshot) {
-        trackTitle.text = state.trackTitle.ifBlank { "AirPlay" }
+        trackTitle.text = state.trackTitle.ifBlank { "Играет музыка" }
         trackArtist.text = state.trackArtist
         trackAlbum.text = state.trackAlbum
+        // No metadata from the sender (radio, system audio): keep the screen
+        // honest instead of showing empty artist/album lines.
+        val hasMeta = state.trackTitle.isNotBlank()
+        trackArtist.visibility = if (hasMeta) View.VISIBLE else View.GONE
+        trackAlbum.visibility = if (hasMeta) View.VISIBLE else View.GONE
         val duration = state.progressDuration
         val position = state.progressPosition.coerceIn(0.0, if (duration > 0) duration else Double.MAX_VALUE)
         // Without a real position from the sender (a track that is paused when

@@ -913,6 +913,10 @@ class AirPlayServer(
         val contentType = request.header("Content-Type")
         if (contentType == "application/x-dmap-tagged") {
             val meta = parseDmap(request.body)
+            if (meta["minm"] == null && meta["asar"] == null && meta["asal"] == null) {
+                val head = request.body.copyOf(minOf(64, request.body.size))
+                Log.i(TAG, "dmap without known tags: ${request.body.size}b ${Bytes.hex(head)}")
+            }
             listener.onTrackMetadata(meta["minm"], meta["asar"], meta["asal"])
             meta["astm"]?.toDoubleOrNull()?.let {
                 Log.i(TAG, "metadata duration astm=${it.toLong()}ms")

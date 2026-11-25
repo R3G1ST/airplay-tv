@@ -1,5 +1,66 @@
 # Changelog
 
+## 1.3.7
+
+- The now-playing block (title, artist, album) is now centred on the timeline
+  axis: the progress bar and the time row were left-aligned inside the column,
+  so their centre was ~18 dp off from the centred text.
+
+## 1.3.6
+
+- Empty "clear now-playing" messages from the sender no longer wipe the music
+  screen or the cached last track (this was the bare "AirPlay" screen while
+  music played).
+- Repeated identical metadata heartbeats (about one per second) are ignored, so
+  the UI is not redrawn for nothing.
+- The noisy per-request protocol log is gone; the raw DMAP dump stays only when
+  a metadata update carries no known tags.
+- Restored the decoded-fps log line lost during the presentation-time experiment.
+- The decoder is back on the known-good vendor configuration (the removed
+  low-latency flag had stopped it from producing frames and triggered a green,
+  corrupted software-decoder picture).
+
+## 1.3.5
+
+- Log every SET_PARAMETER (content type, size, first bytes) to find where the
+  sender puts now-playing data when it sends an empty DMAP block.
+
+## 1.3.4
+
+- Empty metadata updates from the sender (radio, system audio, some Apple Music
+  states) no longer wipe the now-playing screen and the cached last track. That
+  used to leave a bare "AirPlay" screen while music played.
+- A music session without metadata now shows "Играет музыка" instead of an empty
+  artist/album block.
+- The log records the raw DMAP body when it carries no known tags, for diagnosis.
+
+## 1.3.3
+
+- Restored the vendor low-latency decoder flag: removing it made the hardware
+  decoder produce no frames at all on this TV, after which the software fallback
+  showed a green, corrupted picture.
+- The software fallback now requires three stalled attempts (15 s) and never
+  replaces a decoder that is already producing frames.
+- The decoder log now names the actual codec in use.
+
+## 1.3.2
+
+- Reverted timestamp-scheduled presentation added in 1.3.1: this vendor codec
+  held frames until the given time, which added up to half a second of input
+  lag. Frames are presented immediately again.
+- Kept the larger decoder buffer pool (no vendor "low latency" mode).
+
+## 1.3.1 — smooth motion
+
+- Video frames are now presented at their real timestamps instead of "as soon as
+  decoded". Mirroring arrives over TCP in bursts, so showing every frame
+  immediately made the cursor jump: two frames on one screen refresh, none on
+  the next. Early frames wait for their vsync; late ones still show at once.
+- The vendor "low latency" decoder mode is no longer requested: it reduces the
+  output buffer count to 4, which is too few once frames are paced.
+- The 5-second FPS line now also reports how many frames were late and the worst
+  lateness, so judder can be measured instead of guessed.
+
 ## 1.3.0 — reliability pass ("always connects, always works")
 
 - **Health watchdog**: every 30 s the service checks that the RTSP listener and
