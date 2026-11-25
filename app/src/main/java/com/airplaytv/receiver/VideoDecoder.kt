@@ -106,6 +106,7 @@ class VideoDecoder(
             // changed, even while input keeps flowing. Recreate, but never reuse
             // the released codec (the old code did, which threw
             // "codec is released already" in an endless loop).
+            if (paused) return  // hidden: never recreate, it would lose the reference frames
             val now = android.os.SystemClock.elapsedRealtime()
             if (lastOutputAt > 0 && now - lastOutputAt > 5_000) {
                 Log.w(TAG, "decoder stalled for ${now - lastOutputAt}ms, recreating")

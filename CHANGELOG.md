@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.4
+
+- Mirroring comes back to the screen after 3 s of remote inactivity (music keeps
+  12 s). A hidden mirroring surface cannot be re-synced without a keyframe, and
+  macOS only sends one when the picture changes, so the receiver must not stay
+  hidden for long.
+- The decoder is never recreated while the window is hidden.
+
 ## 1.1.3
 
 - The decoder is no longer destroyed when the receiver is hidden. It keeps

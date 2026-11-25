@@ -247,7 +247,12 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         if (now - lastUiLaunch < 4000) return
 
         val idle = msSinceUserActivity()
-        val requiredIdle = 12_000L
+        // Mirroring must not lose its surface: a hidden decoder cannot be
+        // re-synced without a keyframe, and macOS sends keyframes only when the
+        // picture changes. Music has no such problem, so it waits longer.
+        val mirroring = AppState.snapshot.phase == AppState.Phase.MIRRORING ||
+            (AppState.snapshot.phase == AppState.Phase.PLAYING && AppState.snapshot.mirrorWidth > 0)
+        val requiredIdle = if (mirroring) 3_000L else 12_000L
         // A brand-new cast is an explicit action on the phone: show it at once.
         if (!force && idle < requiredIdle) {
             if (!launchRetryScheduled) {
@@ -304,13 +309,13 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         override fun run() {
             if (AppState.snapshot.phase == AppState.Phase.IDLE) return
             launchUi()
-            uiHandler.postDelayed(this, 4_000)
+            uiHandler.postDelayed(this, 2_000)
         }
     }
 
     private fun startUiTicker() {
         uiHandler.removeCallbacks(uiTicker)
-        uiHandler.postDelayed(uiTicker, 4_000)
+        uiHandler.postDelayed(uiTicker, 2_000)
     }
 
     override fun onSessionStarted(deviceName: String?) {
