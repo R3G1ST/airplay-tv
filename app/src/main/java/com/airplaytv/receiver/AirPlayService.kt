@@ -539,7 +539,9 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         if (!deviceName.isNullOrBlank()) AppState.update { it.copy(senderName = deviceName) }
         // Keep the remembered level for the first seconds and start from it.
         volumeLockUntil = android.os.SystemClock.elapsedRealtime() + 3_000
-        audioPlayer.setInitialVolume(DeviceIdentity.lastVolume(this))
+        val remembered = DeviceIdentity.lastVolume(this)
+        audioPlayer.setInitialVolume(remembered)
+        publishVolume(remembered)
         acquireWifiLock()
         acquireCpuLock()
         launchUi(force = true)
@@ -847,6 +849,11 @@ class AirPlayService : Service(), AirPlayServer.Listener {
      */
     private var volumeLockUntil = 0L
 
+    private fun publishVolume(linear: Float) {
+        val db = if (linear <= 0.0001f) -144f else (20.0 * Math.log10(linear.toDouble())).toFloat()
+        if (::server.isInitialized) server.setReportedVolumeDb(db)
+    }
+
     private val persistVolume = Runnable {
         DeviceIdentity.setLastVolume(this, audioPlayer.volume())
     }
@@ -861,6 +868,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         val linear = Math.pow(10.0, volumeDb / 20.0).toFloat()
         Log.i(TAG, "volume: %.1f dB -> %.2f".format(volumeDb, linear))
         audioPlayer.setVolume(linear)
+        publishVolume(linear)
         // Persist at most once a second while the slider is being dragged.
         uiHandler.removeCallbacks(persistVolume)
         uiHandler.postDelayed(persistVolume, 1000)

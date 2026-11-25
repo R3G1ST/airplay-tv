@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.2
+
+- The receiver now reports its real volume to the sender. `GET_PARAMETER volume`
+  used to be hardcoded to 0 dB, so the iPhone/Mac AirPlay slider showed maximum
+  while the TV was playing at the remembered, lower level.
+- The reported level is updated on session start (from the stored value) and on
+  every applied volume change.
+
 ## 1.5.1
 
 - Fix: the start-up volume lock from 1.5.0 was not actually compiled in (the

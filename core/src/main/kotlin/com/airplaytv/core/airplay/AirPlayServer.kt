@@ -175,6 +175,13 @@ class AirPlayServer(
 
     val deviceId: String get() = config.deviceId
 
+    /** Volume in dB the receiver is actually playing at (0 = maximum). */
+    @Volatile private var reportedVolumeDb: Float = 0f
+
+    fun setReportedVolumeDb(db: Float) {
+        reportedVolumeDb = db
+    }
+
     /** True while the RTSP/HTTP server accepts connections. */
     val isListening: Boolean get() = http.isListening
     val deviceName: String get() = config.name
@@ -911,8 +918,15 @@ class AirPlayServer(
         if (contentType == "text/parameters") {
             val text = request.body.toString(Charsets.US_ASCII)
             if (text.lineSequence().any { it.trim() == "volume" }) {
+                // This is how a sender asks "how loud are you really?". It used
+                // to answer a hardcoded 0 dB, so the iPhone slider showed maximum
+                // while the TV played at the remembered (lower) level.
                 response.header("Content-Type", "text/parameters")
-                response.body = "volume: 0.0\r\n".toByteArray(Charsets.US_ASCII)
+                val body = java.lang.String.format(
+                    java.util.Locale.US, "volume: %.1f\r\n", reportedVolumeDb,
+                )
+                response.body = body.toByteArray(Charsets.US_ASCII)
+                Log.i(TAG, "GET_PARAMETER volume -> ${reportedVolumeDb}dB")
             }
         }
     }
