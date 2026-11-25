@@ -192,10 +192,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         val statusPill = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(7), dp(16), dp(7))
-            background = capsule(0x1FFFFFFF).apply {
-                setStroke(dp(1), 0x1FFFFFFF)
-            }
+            setPadding(dp(12), dp(6), dp(14), dp(6))
+            background = chipDrawable(0x14FFFFFF, 0x2EFFFFFF)
         }
         // Dot + expanding halo: a quiet "alive" signal, drawn with one animator
         // and zero assets.
@@ -208,13 +206,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             background = dotDrawable(statusColor, 255)
         }
         dotBox.addView(statusDot, android.widget.FrameLayout.LayoutParams(dp(8), dp(8), Gravity.CENTER))
-        statusPill.addView(dotBox, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+        statusPill.addView(dotBox, LinearLayout.LayoutParams(dp(16), dp(16)).apply {
             marginEnd = dp(6)
         })
         statusText = TextView(this).apply {
             text = "Готов к подключению"
             setTextColor(Color.parseColor("#E8E8ED"))
-            textSize = 14f
+            textSize = 13f
             letterSpacing = 0.01f
         }
         statusPill.addView(statusText)
@@ -232,12 +230,17 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            // The focused chip scales up by ~4%; without this the outer edges
+            // were clipped flat (the "cut outline" on the left button).
+            clipChildren = false
+            clipToPadding = false
+            setPadding(dp(8), 0, dp(8), 0)
         }
         buttons.addView(button("Перезапустить") { restart() })
         buttons.addView(button("Имя устройства") { renameDevice() })
         overlay.addView(buttons, wrapParams().apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            topMargin = dp(22)
+            topMargin = dp(18)
         })
 
         badge = TextView(this).apply {
@@ -446,16 +449,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun button(label: String, onClick: () -> Unit): TextView =
         TextView(this).apply {
             text = label
-            textSize = 13f
+            textSize = 12f
             setTextColor(Color.parseColor("#E8E8ED"))
             gravity = Gravity.CENTER
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            background = capsule(0x14FFFFFF)
+            setPadding(dp(14), dp(7), dp(14), dp(7))
+            background = chipDrawable(0x14FFFFFF, 0x2EFFFFFF)
             isFocusable = true
             isClickable = true
             setOnClickListener { onClick() }
             setOnFocusChangeListener { v, focused ->
-                v.background = capsule(if (focused) 0x33FFFFFF else 0x14FFFFFF)
+                v.background = chipDrawable(if (focused) 0x33FFFFFF else 0x14FFFFFF, 0x2EFFFFFF)
                 v.animate().scaleX(if (focused) 1.04f else 1f).scaleY(if (focused) 1.04f else 1f)
                     .setDuration(120).start()
             }
@@ -463,7 +466,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
-            lp.marginEnd = dp(10)
+            lp.marginEnd = dp(8)
             layoutParams = lp
         }
 
@@ -503,6 +506,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
         statusDot.alpha = 1f
     }
+
+    /** Glass chip with an inset-looking hairline, shared by status and buttons. */
+    private fun chipDrawable(fill: Int, stroke: Int): GradientDrawable =
+        GradientDrawable().apply {
+            cornerRadius = dp(14).toFloat()
+            setColor(fill)
+            setStroke(dp(1), stroke)
+        }
 
     private fun capsule(color: Int): GradientDrawable =
         GradientDrawable().apply {

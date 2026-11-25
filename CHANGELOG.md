@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.4
+
+- Fixed the "cut" outline on the left button: the focused chip scales up a few
+  percent and the parent row clipped its outer edges flat. The row no longer
+  clips its children and has a small horizontal padding.
+- Status pill and both buttons now share one compact glass-chip style.
+
+## 1.4.3
+
+- Status pill and the two buttons use one shared "glass chip" style: rounded
+  rectangle with a hairline border instead of a full capsule, so no end looks
+  clipped. Both are smaller (13 sp status, 12 sp chips, tighter padding).
+
 ## 1.4.2
 
 - Added breathing room between the status pill and the two chip buttons on the
