@@ -655,8 +655,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
             Screen.VIDEO -> {
                 hide(overlay); hide(nowPlaying)
+                hide(badge); hide(aspectButton)
                 surfaceView.visibility = View.VISIBLE
-                show(badge, 150); show(aspectButton, 150)
             }
         }
         if (previous == Screen.VIDEO && target != Screen.VIDEO) {

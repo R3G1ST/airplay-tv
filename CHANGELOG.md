@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.4
+
+- One sender owns the screen: a new device preempts the previous cast instead of
+  both playing at once.
+- Cleaner mirroring: the corner badge and the on-screen format button are gone
+  (screen format is still switchable with the MENU key).
+
 ## 1.0.3
 
 - The video stream now has a 15 s silence watchdog: a stalled connection is

@@ -130,6 +130,7 @@ class AirPlayServer(
     private var audio: AudioStream? = null
 
     @Volatile private var streaming = false
+    @Volatile private var activeClientIp: String? = null
     private val sessionCounter = java.util.concurrent.atomic.AtomicLong(0)
 
     private enum class PairingStatus { INITIAL, SETUP, HANDSHAKE, FINISHED }
@@ -342,6 +343,25 @@ class AirPlayServer(
             response.reason = "Bad Request"
             return
         }
+        // A new pairing means a new cast: preempt whatever was streaming before
+        // (an Apple TV behaves the same way — one sender owns the screen).
+        val ip = request.remoteAddress.hostAddress ?: "unknown"
+        val previous = activeClientIp
+        // Only a *different* device preempts: the same sender opens extra
+        // connections (events, audio) and some of them re-pair mid-session.
+        if (previous != null && previous != ip) {
+            Log.i(TAG, "new sender $ip preempts $previous")
+            stopStreams()
+            synchronized(lock) {
+                aesKey = null
+                aesIv = null
+            }
+            if (streaming) {
+                streaming = false
+                listener.onSessionEnded()
+            }
+        }
+        activeClientIp = ip
         val st = client(request)
         synchronized(lock) {
             st.pairingStatus = PairingStatus.SETUP
