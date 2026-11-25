@@ -24,11 +24,18 @@ class VideoDecoder(
 
     fun setSurface(newSurface: Surface?) {
         synchronized(lock) {
-            if (surface === newSurface) return
+            if (newSurface != null && !newSurface.isValid) {
+                // Surfaces from a stopped activity stay referenced but are dead;
+                // configuring a decoder with one throws "surface has been released".
+                return
+            }
+            // SurfaceView reuses the same Surface object after it has been
+            // destroyed and recreated, so comparing by reference is wrong: a
+            // decoder that failed earlier would never be retried.
             surface = newSurface
             if (newSurface == null) {
                 releaseCodecLocked()
-            } else {
+            } else if (codec == null) {
                 configureLocked()
             }
         }
@@ -98,9 +105,15 @@ class VideoDecoder(
 
     private fun configureLocked() {
         val target = surface ?: return
+        if (!target.isValid) {
+            Log.w(TAG, "ignoring a released surface")
+            surface = null
+            return
+        }
         val s = sps ?: return
         val p = pps ?: return
         releaseCodecLocked()
+        var created: MediaCodec? = null
         try {
             val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, configuredWidth.coerceAtLeast(1920), configuredHeight.coerceAtLeast(1080))
             format.setByteBuffer("csd-0", java.nio.ByteBuffer.wrap(annexB(s)))
@@ -117,6 +130,7 @@ class VideoDecoder(
             } catch (_: Throwable) {
             }
             val c = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            created = c
             c.configure(format, target, null, 0)
             c.start()
             codec = c
@@ -124,6 +138,12 @@ class VideoDecoder(
         } catch (e: Throwable) {
             Log.e(TAG, "cannot start H.264 decoder", e)
             codec = null
+            try {
+                created?.release()
+            } catch (_: Throwable) {
+            }
+            // The surface died under us: wait for a fresh one from the activity.
+            if (!target.isValid) surface = null
         }
     }
 

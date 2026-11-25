@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2
+
+- Fixed the black screen on the first connection: a released (or reused)
+  SurfaceView surface was passed to the decoder, which failed with
+  "surface has been released". The decoder now validates the surface and
+  re-configures when a fresh one arrives.
+
 ## 1.0.1
 
 - Pairing and FairPlay state are now kept per sender device. macOS opens several
