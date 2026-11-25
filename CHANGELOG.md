@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.5
+
+- The sender's name is now shown: the pill above the track title on the music
+  screen and the badge during mirroring display the device that is casting
+  ("iPhone (Никита)"), taken from the `name` field of the SETUP plist and
+  cleared when the session ends.
+
 ## 1.4.4
 
 - Fixed the "cut" outline on the left button: the focused chip scales up a few

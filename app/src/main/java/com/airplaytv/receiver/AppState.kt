@@ -12,6 +12,8 @@ object AppState {
         val subtitle: String = "Ожидание подключения",
         val detail: String = "",
         val deviceName: String = "",
+        /** Name of the device that is casting right now (from the SETUP plist). */
+        val senderName: String = "",
         val mirrorWidth: Int = 0,
         val mirrorHeight: Int = 0,
         val audioActive: Boolean = false,

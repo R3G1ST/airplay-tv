@@ -66,6 +66,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var interRegular: android.graphics.Typeface? = null
     private var interSemiBold: android.graphics.Typeface? = null
     private lateinit var appTitle: TextView
+    private lateinit var sourcePill: TextView
     private var statusHalo: View? = null
     private var statusPulse: android.animation.ValueAnimator? = null
     private var statusColor = 0xFF34C759.toInt()
@@ -672,7 +673,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             lastHintSeq = state.remoteHintSeq
             showRemoteHint(state.remoteHint)
         }
-        badge.text = "AirPlay • ${state.deviceName}"
+        badge.text = state.senderName.trim().ifBlank { "AirPlay" }
         if (state.mirrorWidth > 0 && state.mirrorHeight > 0) {
             videoWidth = state.mirrorWidth
             videoHeight = state.mirrorHeight
@@ -837,6 +838,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun renderNowPlaying(state: AppState.Snapshot) {
+        val sender = state.senderName.trim()
+        sourcePill.text = if (sender.isBlank()) "AirPlay" else sender.take(30)
         trackTitle.text = state.trackTitle.ifBlank { "Играет музыка" }
         trackArtist.text = state.trackArtist
         trackAlbum.text = state.trackAlbum

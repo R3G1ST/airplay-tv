@@ -141,6 +141,7 @@ class AirPlayServer(
             // mirroring socket is still alive. Gating on it left the last video
             // frame frozen on screen and the new sender's music invisible.
             streaming = false
+            senderName = null
             listener.onSessionEnded()
             try {
                 http.closeConnectionsFrom(java.net.InetAddress.getByName(previous))
@@ -164,6 +165,8 @@ class AirPlayServer(
 
     @Volatile private var streaming = false
     @Volatile private var activeClientIp: String? = null
+    /** Human-readable sender name from the SETUP plist ("iPhone (Никита)"). */
+    @Volatile private var senderName: String? = null
     private val sessionCounter = java.util.concurrent.atomic.AtomicLong(0)
 
     private enum class PairingStatus { INITIAL, SETUP, HANDSHAKE, FINISHED }
@@ -197,6 +200,7 @@ class AirPlayServer(
                 // TEARDOWN already cleared `streaming`. Otherwise its last frame
                 // stays frozen on screen forever.
                 streaming = false
+                senderName = null
                 listener.onSessionEnded()
                 // Drop the sender's control connections too, so its UI stops
                 // showing the receiver as still connected.
@@ -572,6 +576,10 @@ class AirPlayServer(
             listener.onDacpInfo(dacpId, activeRemote)
         }
         Log.i(TAG, "SETUP request: ${root.toString().take(900)}")
+        root.str("name")?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            senderName = it
+            Log.i(TAG, "sender name: $it (model=${root.str("model")})")
+        }
 
         val eiv = root.data("eiv")
         val ekey = root.data("ekey")
@@ -876,7 +884,7 @@ class AirPlayServer(
         sessionCounter.incrementAndGet()
         if (!streaming) {
             streaming = true
-            listener.onSessionStarted(null)
+            listener.onSessionStarted(senderName)
         }
         Log.i(TAG, "RECORD: streaming started")
     }

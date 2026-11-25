@@ -532,7 +532,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
     }
 
     override fun onSessionStarted(deviceName: String?) {
-        Log.i(TAG, "session started, remote idle ${msSinceUserActivity()}ms")
+        Log.i(TAG, "session started by ${deviceName ?: "unknown"}, remote idle ${msSinceUserActivity()}ms")
+        if (!deviceName.isNullOrBlank()) AppState.update { it.copy(senderName = deviceName) }
         acquireWifiLock()
         acquireCpuLock()
         launchUi(force = true)
@@ -563,7 +564,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         AppState.update {
             it.copy(
                 trackTitle = "", trackArtist = "", trackAlbum = "", artwork = null, audioFormat = "",
-                mirrorWidth = 0, mirrorHeight = 0,
+                mirrorWidth = 0, mirrorHeight = 0, senderName = "",
                 progressPosition = 0.0, progressDuration = 0.0, progressKnown = false,
             )
         }
