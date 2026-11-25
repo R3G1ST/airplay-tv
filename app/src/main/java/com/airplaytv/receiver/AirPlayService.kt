@@ -357,9 +357,9 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         if (::videoDecoder.isInitialized) videoDecoder.pause()
     }
 
-    fun attachSurface(surface: Surface?, forceReconfigure: Boolean = false) {
+    fun attachSurface(surface: Surface?, forceReconfigure: Boolean = false, fresh: Boolean = false) {
         pendingSurface = surface
-        if (::videoDecoder.isInitialized) videoDecoder.setSurface(surface, forceReconfigure)
+        if (::videoDecoder.isInitialized) videoDecoder.setSurface(surface, forceReconfigure, fresh)
         videoPlayer?.setSurface(surface)
     }
 
@@ -964,8 +964,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         var instance: AirPlayService? = null
             private set
 
-        fun attachSurfaceFromUi(surface: Surface?, forceReconfigure: Boolean = false) {
-            instance?.attachSurface(surface, forceReconfigure)
+        fun attachSurfaceFromUi(surface: Surface?, forceReconfigure: Boolean = false, fresh: Boolean = false) {
+            instance?.attachSurface(surface, forceReconfigure, fresh)
         }
 
         private fun CoreLog.Level.toAndroidPriority(): Int = when (this) {

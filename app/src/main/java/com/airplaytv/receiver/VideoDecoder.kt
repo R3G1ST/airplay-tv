@@ -33,10 +33,19 @@ class VideoDecoder(
     private var stallCount = 0
     private var renderedAny = false
 
-    fun setSurface(newSurface: Surface?, forceReconfigure: Boolean = false) {
+    fun setSurface(newSurface: Surface?, forceReconfigure: Boolean = false, fresh: Boolean = false) {
         synchronized(lock) {
             if (newSurface != null && !newSurface.isValid) return
             val previous = surface
+            // SurfaceView reuses the same Java Surface object across activity
+            // restarts, but the native surface behind it is new. "fresh" comes
+            // from surfaceCreated, so a redundant onResume attach is ignored
+            // while a real new surface is always re-bound.
+            if (!forceReconfigure && !fresh && previous === newSurface) {
+                paused = false
+                if (codec == null) configureLocked()
+                return
+            }
             surface = newSurface
 
             if (newSurface == null) {
@@ -48,21 +57,23 @@ class VideoDecoder(
             }
 
             val c = codec
-            if (c != null && !forceReconfigure && previous != null &&
+            if (c != null && !forceReconfigure &&
                 android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M
             ) {
                 try {
                     c.setOutputSurface(newSurface)
                     paused = false
                     lastOutputAt = android.os.SystemClock.elapsedRealtime()
-                    Log.i(TAG, "switched the decoder to the new surface")
+                    Log.i(TAG, "switched the decoder to the new surface (fresh=$fresh)")
                     return
                 } catch (e: Throwable) {
-                    Log.w(TAG, "setOutputSurface failed: ${e.message}")
+                    Log.w(TAG, "setOutputSurface failed: ${e.message}, recreating")
                 }
             }
+            // No codec, an explicit reconfigure, or a dead surface: build a new
+            // decoder on the current surface.
             paused = false
-            if (c == null || forceReconfigure) configureLocked()
+            if (sps != null && pps != null) configureLocked()
         }
     }
 

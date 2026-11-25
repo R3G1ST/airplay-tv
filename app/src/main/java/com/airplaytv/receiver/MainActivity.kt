@@ -1132,7 +1132,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        AirPlayService.attachSurfaceFromUi(holder.surface)
+        // A genuinely new native surface: the decoder must re-bind to it even
+        // though the Java Surface object may be the same instance.
+        AirPlayService.attachSurfaceFromUi(holder.surface, fresh = true)
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {

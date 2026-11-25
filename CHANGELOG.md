@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.5
+
+- SurfaceView reuses the same Java Surface object after an activity restart while
+  the native surface is new. The decoder now re-binds on `surfaceCreated` (a
+  real new surface) but still ignores a redundant `onResume` attach. This is the
+  black mirroring picture after the receiver window is raised.
+- If re-binding fails the decoder is rebuilt instead of silently writing into a
+  dead surface.
+
+## 1.5.4
+
+- Fixed the black picture after the receiver is raised: the activity attaches its
+  surface twice (surfaceCreated + onResume), and the second `setOutputSurface`
+  made the Amlogic decoder stop producing frames. Attaching the same surface
+  again is now a no-op.
+
 ## 1.5.3
 
 - Volume handling is now precise: only the sender's automatic "0 dB" right after
