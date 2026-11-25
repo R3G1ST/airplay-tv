@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.9
+
+- The AirPlay volume is remembered: a new cast starts at the level the previous
+  one ended with (default 70%) instead of full volume. The sender can still
+  change it any time; the value is stored at most once a second and on session
+  end.
+
 ## 1.4.8
 
 - The built-in UI self-test waits for the foreground service to start (it reset

@@ -9,6 +9,7 @@ object DeviceIdentity {
     private const val KEY_MAC = "device_mac"
     private const val KEY_NAME = "device_name"
     private const val KEY_ASPECT = "aspect_mode"
+    private const val KEY_VOLUME = "last_volume"
 
     fun deviceId(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -32,6 +33,19 @@ object DeviceIdentity {
         val clean = name.replace('.', ' ').replace('/', ' ').trim().ifEmpty { "Android TV" }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY_NAME, clean).apply()
+    }
+
+    /**
+     * Last AirPlay volume (0..1). A new cast starts at this level instead of
+     * jumping to full volume; the sender can still change it afterwards.
+     */
+    fun lastVolume(context: Context): Float =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(KEY_VOLUME, 0.7f)
+            .coerceIn(0f, 1f)
+
+    fun setLastVolume(context: Context, volume: Float) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putFloat(KEY_VOLUME, volume.coerceIn(0f, 1f)).apply()
     }
 
     /** 0 = fit (letterbox), 1 = stretch (fill, keeps geometry), 2 = zoom (fill, crops). */

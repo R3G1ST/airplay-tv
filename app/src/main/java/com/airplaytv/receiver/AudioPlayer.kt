@@ -333,6 +333,14 @@ class AudioPlayer {
 
     @Volatile private var pendingVolume: Float = 1f
 
+    /** Level used before the sender sends its own (the previous session's). */
+    fun setInitialVolume(v: Float) {
+        pendingVolume = v.coerceIn(0f, 1f)
+    }
+
+    /** Current level, 0..1. */
+    fun volume(): Float = pendingVolume
+
     /** elapsedRealtime of the last audible PCM chunk (sender streams silence while paused). */
     @Volatile var lastAudibleAt: Long = 0
         private set

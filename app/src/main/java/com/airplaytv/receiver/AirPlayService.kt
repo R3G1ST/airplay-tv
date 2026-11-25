@@ -50,6 +50,9 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         val deviceId = DeviceIdentity.deviceId(this)
         val deviceName = DeviceIdentity.deviceName(this)
 
+        // Start a new cast at the level the previous one ended with.
+        audioPlayer.setInitialVolume(DeviceIdentity.lastVolume(this))
+
         videoDecoder = VideoDecoder { width, height ->
             AppState.update { it.copy(mirrorWidth = width, mirrorHeight = height) }
         }
@@ -553,6 +556,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
 
     override fun onSessionEnded() {
         Log.i(TAG, "session ended")
+        uiHandler.removeCallbacks(persistVolume)
+        DeviceIdentity.setLastVolume(this, audioPlayer.volume())
         uiHandler.removeCallbacks(uiTicker)
         releaseWifiLock()
         releaseCpuLock()
@@ -831,9 +836,17 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         dacp?.send("previtem")
     }
 
+    private val persistVolume = Runnable {
+        DeviceIdentity.setLastVolume(this, audioPlayer.volume())
+    }
+
     override fun onVolumeChanged(volumeDb: Float) {
         val linear = Math.pow(10.0, volumeDb / 20.0).toFloat()
+        Log.i(TAG, "volume: %.1f dB -> %.2f".format(volumeDb, linear))
         audioPlayer.setVolume(linear)
+        // Persist at most once a second while the slider is being dragged.
+        uiHandler.removeCallbacks(persistVolume)
+        uiHandler.postDelayed(persistVolume, 1000)
     }
 
     override fun onPlayVideo(url: String, startPositionSeconds: Double, headers: Map<String, String>) {
