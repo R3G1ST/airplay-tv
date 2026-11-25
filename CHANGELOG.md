@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.6
+
+- Fixed a stuck last frame: a sender takeover and a closed mirroring socket now
+  always end the cast on screen. Previously this depended on an internal flag
+  that macOS clears with its frequent TEARDOWN, so the old Mac picture stayed
+  frozen while a phone played music (and the phone looked "not connected").
+- Ending a cast also closes the sender's control connections, so its AirPlay
+  menu stops showing the receiver as connected.
+
 ## 1.1.5
 
 - Screen mirroring no longer re-opens the receiver by itself after you leave it:

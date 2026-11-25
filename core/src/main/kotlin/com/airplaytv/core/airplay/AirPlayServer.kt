@@ -132,10 +132,13 @@ class AirPlayServer(
                 aesKey = null
                 aesIv = null
             }
-            if (streaming) {
-                streaming = false
-                listener.onSessionEnded()
-            }
+            // A takeover always ends the old cast. This must not depend on the
+            // `streaming` flag: a TEARDOWN from the old sender (macOS sends one
+            // whenever it restarts its audio channel) clears that flag while its
+            // mirroring socket is still alive. Gating on it left the last video
+            // frame frozen on screen and the new sender's music invisible.
+            streaming = false
+            listener.onSessionEnded()
             try {
                 http.closeConnectionsFrom(java.net.InetAddress.getByName(previous))
             } catch (_: Throwable) {
@@ -184,9 +187,19 @@ class AirPlayServer(
                 listener.onVideoFrame(data, ptsMicros)
 
             override fun onVideoEnded() {
-                if (streaming) {
-                    streaming = false
-                    listener.onSessionEnded()
+                // The mirroring socket closed: the cast is over, even when a
+                // TEARDOWN already cleared `streaming`. Otherwise its last frame
+                // stays frozen on screen forever.
+                streaming = false
+                listener.onSessionEnded()
+                // Drop the sender's control connections too, so its UI stops
+                // showing the receiver as still connected.
+                val sender = activeClientIp
+                if (sender != null) {
+                    try {
+                        http.closeConnectionsFrom(java.net.InetAddress.getByName(sender))
+                    } catch (_: Throwable) {
+                    }
                 }
             }
         })
