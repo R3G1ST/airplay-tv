@@ -240,7 +240,6 @@ class AirPlayService : Service(), AirPlayServer.Listener {
      * screen away while somebody is navigating the TV.
      */
     private fun launchUi(force: Boolean = false) {
-        if (MainActivity.isVisible && MainActivity.hasWindowFocus) return
         val now = System.currentTimeMillis()
         if (now - lastUiLaunch < 4000) return
 
@@ -297,6 +296,20 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         wifiLock = null
     }
 
+    /** Keeps checking whether the receiver should come back after 12 s of remote idleness. */
+    private val uiTicker = object : Runnable {
+        override fun run() {
+            if (AppState.snapshot.phase == AppState.Phase.IDLE) return
+            launchUi()
+            uiHandler.postDelayed(this, 4_000)
+        }
+    }
+
+    private fun startUiTicker() {
+        uiHandler.removeCallbacks(uiTicker)
+        uiHandler.postDelayed(uiTicker, 4_000)
+    }
+
     override fun onSessionStarted(deviceName: String?) {
         Log.i(TAG, "session started, remote idle ${msSinceUserActivity()}ms")
         acquireWifiLock()
@@ -317,6 +330,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
 
     override fun onSessionEnded() {
         Log.i(TAG, "session ended")
+        uiHandler.removeCallbacks(uiTicker)
         releaseWifiLock()
         uiHandler.removeCallbacks(audioWatchdog)
         videoActive = false
@@ -326,6 +340,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         AppState.update {
             it.copy(
                 trackTitle = "", trackArtist = "", trackAlbum = "", artwork = null, audioFormat = "",
+                mirrorWidth = 0, mirrorHeight = 0,
                 progressPosition = 0.0, progressDuration = 0.0, progressKnown = false,
             )
         }
@@ -544,6 +559,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
                     phase = AppState.Phase.PLAYING,
                     subtitle = "AirPlay • музыка",
                     detail = "",
+                    mirrorWidth = 0,
+                    mirrorHeight = 0,
                 )
             }
         }

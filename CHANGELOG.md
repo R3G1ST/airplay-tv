@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1
+
+- Music after a mirroring session used to stay on a black video surface: the
+  mirror geometry was never reset, so a music session was treated as video.
+  It is now cleared on session end and when audio starts.
+- The auto-return ticker no longer depends on incoming frames or a stale
+  "visible" flag: while a cast is active it checks every 4 s whether the remote
+  has been idle for 12 s and brings the receiver back.
+
 ## 1.1.0
 
 - A new sender now takes over the screen on any new SETUP/RECORD, not only on
