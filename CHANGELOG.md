@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.7
+
+- A TV whose model is reported as "Chromecast" (many Android TVs) is no longer
+  advertised under that name, where it collided with the built-in Cast target
+  and was easy to pick by mistake. Such devices now default to "AirPlay TV";
+  the name can still be changed with the "Device name" button.
+
 ## 1.1.6
 
 - Fixed a stuck last frame: a sender takeover and a closed mirroring socket now

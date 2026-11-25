@@ -57,10 +57,15 @@ object DeviceIdentity {
             base
         }
         // Dots terminate a DNS-SD label and slashes/control chars break clients.
-        return full.replace('.', ' ')
+        val clean = full.replace('.', ' ')
             .replace('/', ' ')
             .replace(Regex("[\\p{Cntrl}]"), "")
             .trim()
             .ifEmpty { "Android TV" }
+        // Many Android TVs report their model as "Chromecast" (the built-in Cast
+        // target has the same name), which makes the AirPlay entry impossible to
+        // tell apart in the senders' list. Use a distinct, honest default.
+        val generic = setOf("chromecast", "android tv", "google tv", "tv")
+        return if (clean.lowercase() in generic) "AirPlay TV" else clean
     }
 }
