@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.8
+
+- The built-in UI self-test waits for the foreground service to start (it reset
+  the state right after launch, hiding the test screens) and can be re-run on a
+  live activity.
+
+## 1.4.7 — crash hardening
+
+- A failure while drawing a UI state can no longer kill the receiver: the
+  listener catches it, logs it, and keeps the last good frame. The service keeps
+  serving.
+- Built-in UI self-test (`--ez self_test true`): drives the real screens through
+  music, mirroring and idle. It is run on the TV before every release now, so a
+  crash like the 1.4.5 `sourcePill` one is caught on the bench, not by the user.
+
 ## 1.4.6
 
 - Fixed a crash on the first cast after 1.4.5: the sender-name pill was read

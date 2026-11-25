@@ -40,7 +40,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private enum class Screen { IDLE, MUSIC, VIDEO }
 
     private val stateListener: (AppState.Snapshot) -> Unit = { snapshot ->
-        runOnUiThread { render(snapshot) }
+        runOnUiThread {
+            try {
+                render(snapshot)
+            } catch (t: Throwable) {
+                // A rendering bug must never take the receiver down: the last
+                // good frame stays on screen and the service keeps serving.
+                android.util.Log.e("AirPlayTV", "render failed", t)
+            }
+        }
     }
     private var videoWidth = 0
     private var videoHeight = 0
@@ -85,6 +93,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         loadFonts()
         buildUi()
         applyFonts(root)
+        if (intent?.getBooleanExtra("self_test", false) == true) startSelfTest()
         startReceiverService()
         ensureOverlayPermission()
         ensureUsageAccess()
@@ -106,6 +115,60 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
             }, 2500)
         }
+    }
+
+    /**
+     * Smoke test used before every release: drives the real UI through the music
+     * and mirroring screens and back to idle. Any crash shows up in logcat while
+     * the TV is still on the bench.
+     */
+    private fun startSelfTest() {
+        android.util.Log.i("AirPlayTV", "self-test: scheduling UI states")
+        val steps = listOf<() -> Unit>(
+            {
+                AppState.update {
+                    it.copy(
+                        phase = AppState.Phase.PLAYING,
+                        senderName = "Self-test iPhone",
+                        trackTitle = "Self-test",
+                        trackArtist = "Receiver",
+                        trackAlbum = "UI check",
+                        progressKnown = true,
+                        progressPosition = 60.0,
+                        progressDuration = 200.0,
+                        mirrorWidth = 0,
+                        mirrorHeight = 0,
+                    )
+                }
+            },
+            {
+                AppState.update {
+                    it.copy(
+                        phase = AppState.Phase.MIRRORING,
+                        mirrorWidth = 1920,
+                        mirrorHeight = 1080,
+                        detail = "self-test",
+                    )
+                }
+            },
+            {
+                AppState.update {
+                    it.copy(
+                        phase = AppState.Phase.IDLE,
+                        mirrorWidth = 0,
+                        mirrorHeight = 0,
+                        senderName = "",
+                        trackTitle = "",
+                        trackArtist = "",
+                        trackAlbum = "",
+                        progressKnown = false,
+                    )
+                }
+            },
+        )
+        // Wait for the foreground service to finish its own start-up (it resets
+        // the state to IDLE), otherwise the first step would be overwritten.
+        steps.forEachIndexed { i, step -> root.postDelayed(step, 4_000L + 1_400L * i) }
     }
 
     /**
@@ -1026,6 +1089,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("self_test", false)) startSelfTest()
     }
 
     override fun onStart() {
