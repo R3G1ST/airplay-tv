@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+- Pairing and FairPlay state are now kept per sender device. macOS opens several
+  connections at once; before, they could overwrite each other's keys and the
+  first attempt ended in a black screen or a dropped session.
+- High-performance Wi-Fi lock while streaming, so the TV does not fall into
+  power saving in the middle of a cast.
+
 ## 1.0.0 — first public release
 
 - Screen mirroring from iPhone, iPad and Mac (H.264 → MediaCodec)

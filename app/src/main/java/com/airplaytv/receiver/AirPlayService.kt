@@ -27,6 +27,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
     private var dacp: DacpClient? = null
     @Volatile private var videoActive = false
     private var multicastLock: WifiManager.MulticastLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private var pendingSurface: Surface? = null
 
     override fun onCreate() {
@@ -150,6 +151,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         audioPlayer.release()
         videoPlayer?.stop()
         dacp?.stop()
+        releaseWifiLock()
         multicastLock?.let {
             try {
                 if (it.isHeld) it.release()
@@ -272,8 +274,34 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         }
     }
 
+    private fun acquireWifiLock() {
+        if (wifiLock != null) return
+        try {
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
+            wifiLock = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "airplay-tv:stream").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            Log.i(TAG, "high-performance Wi-Fi lock acquired")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Wi-Fi lock unavailable: ${e.message}")
+        }
+    }
+
+    private fun releaseWifiLock() {
+        wifiLock?.let {
+            try {
+                if (it.isHeld) it.release()
+            } catch (_: Throwable) {
+            }
+        }
+        wifiLock = null
+    }
+
     override fun onSessionStarted(deviceName: String?) {
         Log.i(TAG, "session started, remote idle ${msSinceUserActivity()}ms")
+        acquireWifiLock()
         dismissedSession = -1L
         launchUi(force = true)
         // The phase is decided by the first SETUP: video config -> mirroring,
@@ -292,6 +320,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
 
     override fun onSessionEnded() {
         Log.i(TAG, "session ended")
+        releaseWifiLock()
         uiHandler.removeCallbacks(audioWatchdog)
         videoActive = false
         stopProgressTicker()

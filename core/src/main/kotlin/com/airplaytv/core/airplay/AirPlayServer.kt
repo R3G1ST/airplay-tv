@@ -99,14 +99,28 @@ class AirPlayServer(
 
     private var identity: KeyPairRaw = Ed25519.generate()
 
-    private val fairPlay = FairPlayKeyExchange()
+    /**
+     * Pairing and FairPlay state are per sender device, not global: iOS and
+     * macOS open several TCP connections (control, events, audio) and they all
+     * share one pairing. Keeping it global let a second connection wipe the
+     * keys of the first, which produced black screens on the first attempt.
+     */
+    private class ClientState {
+        val fairPlay = FairPlayKeyExchange()
+        var pairingStatus = PairingStatus.INITIAL
+        var ecdhOursPrivate: ByteArray? = null
+        var ecdhOursPublic: ByteArray? = null
+        var ecdhTheirsPublic: ByteArray? = null
+        var ecdhSecret: ByteArray? = null
+        var edTheirsPublic: ByteArray? = null
+    }
 
-    private var pairingStatus = PairingStatus.INITIAL
-    private var ecdhOursPrivate: ByteArray? = null
-    private var ecdhOursPublic: ByteArray? = null
-    private var ecdhTheirsPublic: ByteArray? = null
-    private var ecdhSecret: ByteArray? = null
-    private var edTheirsPublic: ByteArray? = null
+    private val clients = java.util.concurrent.ConcurrentHashMap<String, ClientState>()
+
+    private fun client(request: Request): ClientState {
+        val key = request.remoteAddress.hostAddress ?: "unknown"
+        return clients.getOrPut(key) { ClientState() }
+    }
 
     private var aesKey: ByteArray? = null
     private var aesIv: ByteArray? = null
@@ -328,13 +342,14 @@ class AirPlayServer(
             response.reason = "Bad Request"
             return
         }
+        val st = client(request)
         synchronized(lock) {
-            pairingStatus = PairingStatus.SETUP
-            ecdhSecret = null
-            ecdhOursPrivate = null
-            ecdhOursPublic = null
-            ecdhTheirsPublic = null
-            edTheirsPublic = null
+            st.pairingStatus = PairingStatus.SETUP
+            st.ecdhSecret = null
+            st.ecdhOursPrivate = null
+            st.ecdhOursPublic = null
+            st.ecdhTheirsPublic = null
+            st.edTheirsPublic = null
         }
         response.header("Content-Type", "application/octet-stream")
         response.body = identity.publicKey
@@ -359,13 +374,14 @@ class AirPlayServer(
                 val clientEd = data.copyOfRange(36, 68)
                 val ours = X25519.generate()
                 val secret = X25519.sharedSecret(ours.privateKey, clientEcdh)
+                val st = client(request)
                 synchronized(lock) {
-                    ecdhOursPrivate = ours.privateKey
-                    ecdhOursPublic = ours.publicKey
-                    ecdhTheirsPublic = clientEcdh
-                    ecdhSecret = secret
-                    edTheirsPublic = clientEd
-                    pairingStatus = PairingStatus.HANDSHAKE
+                    st.ecdhOursPrivate = ours.privateKey
+                    st.ecdhOursPublic = ours.publicKey
+                    st.ecdhTheirsPublic = clientEcdh
+                    st.ecdhSecret = secret
+                    st.edTheirsPublic = clientEd
+                    st.pairingStatus = PairingStatus.HANDSHAKE
                 }
                 val message = Bytes.concat(ours.publicKey, clientEcdh)
                 val signature = Ed25519.sign(identity.privateKey, message)
@@ -381,15 +397,16 @@ class AirPlayServer(
                     response.status = 400
                     return
                 }
+                val st = client(request)
                 var secret: ByteArray? = null
                 var oursPublic: ByteArray? = null
                 var theirsPublic: ByteArray? = null
                 var theirsEd: ByteArray? = null
                 synchronized(lock) {
-                    secret = ecdhSecret
-                    oursPublic = ecdhOursPublic
-                    theirsPublic = ecdhTheirsPublic
-                    theirsEd = edTheirsPublic
+                    secret = st.ecdhSecret
+                    oursPublic = st.ecdhOursPublic
+                    theirsPublic = st.ecdhTheirsPublic
+                    theirsEd = st.edTheirsPublic
                 }
                 val secretKey = secret
                 val oursKey = oursPublic
@@ -412,7 +429,7 @@ class AirPlayServer(
                     response.closeConnection = true
                     return
                 }
-                synchronized(lock) { pairingStatus = PairingStatus.FINISHED }
+                synchronized(lock) { st.pairingStatus = PairingStatus.FINISHED }
                 Log.i(TAG, "pair-verify: complete, session trusted")
             }
 
@@ -430,9 +447,10 @@ class AirPlayServer(
 
     private fun handleFpSetup(request: Request, response: Response) {
         val data = request.body
+        val fp = client(request).fairPlay
         when (data.size) {
             16 -> {
-                val reply = fairPlay.setup(data)
+                val reply = fp.setup(data)
                 if (reply == null) {
                     response.status = 400
                     return
@@ -443,7 +461,7 @@ class AirPlayServer(
             }
 
             164 -> {
-                val reply = fairPlay.handshake(data)
+                val reply = fp.handshake(data)
                 if (reply == null) {
                     response.status = 400
                     return
@@ -507,7 +525,7 @@ class AirPlayServer(
             if (eiv.size < 16) {
                 Log.w(TAG, "SETUP: short eiv ${eiv.size}")
             } else {
-                val key = fairPlay.decrypt(ekey)
+                val key = client(request).fairPlay.decrypt(ekey)
                 if (key == null) {
                     Log.e(TAG, "SETUP: FairPlay key decryption failed")
                 } else {
@@ -539,10 +557,11 @@ class AirPlayServer(
                 var keyCopy: ByteArray? = null
                 var ivCopy: ByteArray? = null
                 var secret: ByteArray? = null
+                val st = client(request)
                 synchronized(lock) {
                     keyCopy = aesKey
                     ivCopy = aesIv
-                    secret = ecdhSecret
+                    secret = st.ecdhSecret
                 }
                 val streamKey = keyCopy
                 val streamIv = ivCopy
