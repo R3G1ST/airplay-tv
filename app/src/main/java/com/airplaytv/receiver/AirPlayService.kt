@@ -246,13 +246,16 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         val now = System.currentTimeMillis()
         if (now - lastUiLaunch < 4000) return
 
-        val idle = msSinceUserActivity()
-        // Mirroring must not lose its surface: a hidden decoder cannot be
-        // re-synced without a keyframe, and macOS sends keyframes only when the
-        // picture changes. Music has no such problem, so it waits longer.
+        // Mirroring deliberately does not come back on its own: a hidden
+        // decoder loses its reference frames (macOS sends keyframes only when
+        // the picture changes), so returning would show a black screen. The user
+        // opens the receiver manually and the picture is there. Music keeps
+        // playing in the background and returns after 12 s of remote idleness.
         val mirroring = AppState.snapshot.phase == AppState.Phase.MIRRORING ||
             (AppState.snapshot.phase == AppState.Phase.PLAYING && AppState.snapshot.mirrorWidth > 0)
-        val requiredIdle = if (mirroring) 3_000L else 12_000L
+        if (mirroring && !force) return
+        val idle = msSinceUserActivity()
+        val requiredIdle = 12_000L
         // A brand-new cast is an explicit action on the phone: show it at once.
         if (!force && idle < requiredIdle) {
             if (!launchRetryScheduled) {

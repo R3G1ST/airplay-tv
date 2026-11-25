@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.5
+
+- Screen mirroring no longer re-opens the receiver by itself after you leave it:
+  a hidden mirroring decoder cannot be re-synced without a keyframe. Open the
+  receiver manually and the picture is there. A new cast still opens it.
+- Music keeps the automatic 12-second return.
+
 ## 1.1.4
 
 - Mirroring comes back to the screen after 3 s of remote inactivity (music keeps
