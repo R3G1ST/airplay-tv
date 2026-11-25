@@ -8,7 +8,7 @@ Mirror an iPhone or Mac screen, or play Apple Music losslessly — without ads, 
 ![AirPlay TV](docs/screenshots/banner.png)
 
 ![Android 5.0+](https://img.shields.io/badge/Android-5.0%2B-3DDC84?logo=android&logoColor=white)
-![Size](https://img.shields.io/badge/APK-303%20KB-lightgrey)
+![Size](https://img.shields.io/badge/APK-%3C1%20MB-lightgrey)
 ![No ads](https://img.shields.io/badge/ads-none-brightgreen)
 ![No tracking](https://img.shields.io/badge/tracking-none-brightgreen)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
@@ -49,7 +49,7 @@ We would rather be honest than look bigger:
 
 - Android TV or Google TV, **Android 5.0+**, any CPU (ARM, ARM64, x86).
 - The phone/Mac and the TV on the same local network (multicast must work — guest Wi-Fi with client isolation will not).
-- About **305 KB** of free space.
+- Less than **1 MB** of free space.
 
 ## Install
 
@@ -95,7 +95,7 @@ core/   protocol: mDNS, HTTP/RTSP, pairing, FairPlay, ALAC, H.264 depacketizer
 - mirroring audio: AAC-ELD over RTP/UDP, with a reorder buffer and duplicate removal;
 - Apple Music: ALAC over RTP/UDP, decoded by our own bit-exact lossless decoder;
 - sender name and volume come from AirPlay's own plist messages; the volume is persisted;
-- the UI is set in Inter (Latin + Cyrillic subset, ~60 KB);
+- the UI is set in Inter (a compact Latin + Cyrillic subset);
 - no native libraries: the APK has no `.so` files at all.
 
 ## Build

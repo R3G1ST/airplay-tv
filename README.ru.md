@@ -8,7 +8,7 @@
 ![AirPlay TV](docs/screenshots/banner.png)
 
 ![Android 5.0+](https://img.shields.io/badge/Android-5.0%2B-3DDC84?logo=android&logoColor=white)
-![Размер](https://img.shields.io/badge/APK-303%20KB-lightgrey)
+![Размер](https://img.shields.io/badge/APK-%3C1%20MB-lightgrey)
 ![Без рекламы](https://img.shields.io/badge/%D1%80%D0%B5%D0%BA%D0%BB%D0%B0%D0%BC%D0%B0-%D0%BD%D0%B5%D1%82-brightgreen)
 ![Без слежки](https://img.shields.io/badge/%D1%81%D0%BB%D0%B5%D0%B6%D0%BA%D0%B0-%D0%BD%D0%B5%D1%82-brightgreen)
 ![Лицензия](https://img.shields.io/badge/%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-GPLv3-blue)
@@ -49,7 +49,7 @@
 
 - Android TV или Google TV, **Android 5.0+**, любой процессор (ARM, ARM64, x86).
 - Телефон/Mac и телевизор в одной локальной сети (нужен multicast; гостевой Wi-Fi с изоляцией клиентов не подойдёт).
-- Около **305 КБ** свободного места.
+- Меньше **1 МБ** свободного места.
 
 ## Установка
 
@@ -95,7 +95,7 @@ core/   протокол: mDNS, HTTP/RTSP, спаривание, FairPlay, ALAC,
 - звук зеркалирования: AAC-ELD по RTP/UDP с буфером переупорядочивания и отбрасыванием дублей;
 - Apple Music: ALAC по RTP/UDP, собственный lossless-декодер, проверенный побитово;
 - имя отправителя и громкость — из служебных plist-сообщений AirPlay, громкость хранится в настройках;
-- интерфейс набран шрифтом Inter (подмножество латиницы и кириллицы, ~60 КБ);
+- интерфейс набран шрифтом Inter (компактное подмножество латиницы и кириллицы);
 - никаких нативных библиотек: в APK нет ни одного `.so`.
 
 ## Сборка
