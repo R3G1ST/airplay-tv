@@ -298,15 +298,17 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
             clipToOutline = true
         }
-        row.addView(artworkView, LinearLayout.LayoutParams(dp(380), dp(380)).apply {
-            marginEnd = dp(44)
+        row.addView(artworkView, LinearLayout.LayoutParams(dp(340), dp(340)).apply {
+            marginEnd = dp(40)
         })
 
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
         }
-        row.addView(column, LinearLayout.LayoutParams(dp(520), ViewGroup.LayoutParams.WRAP_CONTENT))
+        // 340 + 40 + 484 = 864 dp: on a 1080p (960 dp) screen this leaves a
+        // comfortable 48 dp margin instead of the cover almost touching the edge.
+        row.addView(column, LinearLayout.LayoutParams(dp(484), ViewGroup.LayoutParams.WRAP_CONTENT))
 
         val pill = TextView(this).apply {
             text = "  AirPlay  "

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.8
+
+- The now-playing row is slightly narrower (cover 340 dp, gap 40 dp), so the
+  cover no longer sits almost against the screen edge: it keeps a ~48 dp margin
+  on a 1080p TV while staying centred with the text block.
+
 ## 1.3.7
 
 - The now-playing block (title, artist, album) is now centred on the timeline
