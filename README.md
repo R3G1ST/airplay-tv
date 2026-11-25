@@ -12,6 +12,7 @@ Mirror an iPhone or Mac screen, or play Apple Music losslessly — without ads, 
 ![No ads](https://img.shields.io/badge/ads-none-brightgreen)
 ![No tracking](https://img.shields.io/badge/tracking-none-brightgreen)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
+![build](https://github.com/R3G1ST/airplay-tv/actions/workflows/build.yml/badge.svg)
 
 ## Screenshots
 
