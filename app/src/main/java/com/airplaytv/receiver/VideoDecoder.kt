@@ -22,6 +22,8 @@ class VideoDecoder(
     private var configuredHeight = 0
     private val bufferInfo = MediaCodec.BufferInfo()
     private var rendered = 0L
+    private var fpsFrames = 0L
+    private var fpsWindowStart = 0L
     private var dropped = 0L
     private var lastOutputAt = 0L
     private var lastInputAt = 0L
@@ -133,6 +135,17 @@ class VideoDecoder(
                     if (rendered++ == 0L) Log.i(TAG, "first decoded frame rendered (${bufferInfo.size}b)")
                     lastOutputAt = android.os.SystemClock.elapsedRealtime()
                     c.releaseOutputBuffer(index, render)
+                    if (render) {
+                        fpsFrames++
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (fpsWindowStart == 0L) fpsWindowStart = now
+                        val elapsed = now - fpsWindowStart
+                        if (elapsed >= 5_000) {
+                            Log.i(TAG, "decoded: %.1f fps".format(fpsFrames * 1000.0 / elapsed))
+                            fpsFrames = 0
+                            fpsWindowStart = now
+                        }
+                    }
                 }
                 index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     val f = c.outputFormat
@@ -165,6 +178,9 @@ class VideoDecoder(
             format.setByteBuffer("csd-0", java.nio.ByteBuffer.wrap(annexB(s)))
             format.setByteBuffer("csd-1", java.nio.ByteBuffer.wrap(annexB(p)))
             format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 4 * 1024 * 1024)
+            // NOTE: no KEY_OPERATING_RATE / "max-fps-to-decode" hints here. On
+            // this Amlogic codec they made it accept input but never output a
+            // frame (black picture). FPS is measured and logged instead.
             try {
                 format.setInteger(MediaFormat.KEY_PRIORITY, 0) // realtime
             } catch (_: Throwable) {

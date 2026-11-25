@@ -41,6 +41,9 @@ class MirrorStream(
     @Volatile var lastFrameAtMs: Long = 0
         private set
 
+    @Volatile private var configuredWidth = 0
+    @Volatile private var configuredHeight = 0
+
     @Volatile private var aesKey: ByteArray? = null
     @Volatile private var aesIv: ByteArray? = null
     private var streamConnectionId: Long = 0
@@ -166,6 +169,8 @@ class MirrorStream(
         var frameCount = 0L
         var badFraming = 0L
         var readBuffer = ByteArray(64 * 1024)
+        var fpsFrames = 0L
+        var fpsWindowStart = System.nanoTime()
 
         while (running && gen == generation) {
             readFully(input, header, 128)
@@ -217,6 +222,15 @@ class MirrorStream(
                     } else if (frameCount % 300 == 0L) {
                         Log.i(TAG, "video frames: $frameCount, last ${decrypted.size}b")
                     }
+                    fpsFrames++
+                    val fpsNow = System.nanoTime()
+                    val elapsedNs = fpsNow - fpsWindowStart
+                    if (elapsedNs >= 5_000_000_000L) {
+                        val fps = fpsFrames * 1_000_000_000.0 / elapsedNs
+                        Log.i(TAG, "video: %.1f fps, %dx%d, last frame %d B".format(fps, configuredWidth, configuredHeight, decrypted.size))
+                        fpsFrames = 0
+                        fpsWindowStart = fpsNow
+                    }
                     sink.onVideoFrame(decrypted, pts)
                 }
                 1 -> {
@@ -256,7 +270,10 @@ class MirrorStream(
             val sourceHeight = java.lang.Float.intBitsToFloat(Bytes.le32(header, 44)).toInt()
             val outWidth = width.takeIf { it in 1..8192 } ?: sourceWidth.takeIf { it in 1..8192 } ?: 1920
             val outHeight = height.takeIf { it in 1..8192 } ?: sourceHeight.takeIf { it in 1..8192 } ?: 1080
-            Log.i(TAG, "video config: sps=${sps.size}b pps=${pps.size}b ${outWidth}x${outHeight} (source ${sourceWidth}x$sourceHeight)")
+            configuredWidth = outWidth
+            configuredHeight = outHeight
+            Log.i(TAG, "video config: sps=${sps.size}b pps=${pps.size}b ${outWidth}x$outHeight (source ${sourceWidth}x$sourceHeight)")
+            Log.i(TAG, "codec params: sps=${Bytes.hex(sps)} pps=${Bytes.hex(pps)}")
             sink.onVideoConfig(sps, pps, outWidth, outHeight)
         } catch (e: Throwable) {
             Log.e(TAG, "failed to parse video config", e)

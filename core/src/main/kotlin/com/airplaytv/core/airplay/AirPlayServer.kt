@@ -92,7 +92,10 @@ class AirPlayServer(
         val sourceVersion: String = "220.68",
         val displayWidth: Int = 1920,
         val displayHeight: Int = 1080,
+        /** Frame duration in seconds, as Apple's /info expects it (1/60). */
         val refreshRate: Double = 1.0 / 60.0,
+        /** Highest frame rate the sender may use. */
+        val maxFps: Int = 60,
     )
 
     private val lock = Any()
@@ -364,7 +367,12 @@ class AirPlayServer(
                 "heightPixels" to PInt(config.displayHeight.toLong()),
                 "rotation" to PBool(false),
                 "refreshRate" to PReal(config.refreshRate),
-                "overscanned" to PBool(true),
+                // "overscanned" makes the sender shrink the picture to a ~94 %
+                // safe area (we measured 1804x1016 instead of 1920x1080), which
+                // then gets upscaled again and looks soft. The TV has no overscan
+                // problem, so ask for the full frame.
+                "overscanned" to PBool(false),
+                "maxFPS" to PInt(config.maxFps.toLong()),
                 "features" to PInt(14),
             )
         )

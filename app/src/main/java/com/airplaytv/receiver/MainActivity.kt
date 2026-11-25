@@ -758,12 +758,20 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         val containerRatio = container.toFloat() / containerHeight.toFloat()
         val fitWidth: Int
         val fitHeight: Int
-        if (videoRatio > containerRatio) {
+        // A 1804x1016 stream in a 1920x1080 window differs from 16:9 by a
+        // fraction of a percent. Fitting it exactly would scale the whole image
+        // by a non-integer factor (and leave a 1-3 px gap) for no reason, so snap
+        // to the full container in that case: one scaling step less, sharper text.
+        val ratioDelta = kotlin.math.abs(videoRatio - containerRatio) / containerRatio
+        if (ratioDelta < 0.006f) {
             fitWidth = container
-            fitHeight = (container / videoRatio).toInt()
+            fitHeight = containerHeight
+        } else if (videoRatio > containerRatio) {
+            fitWidth = container
+            fitHeight = kotlin.math.round(container / videoRatio).toInt()
         } else {
             fitHeight = containerHeight
-            fitWidth = (containerHeight * videoRatio).toInt()
+            fitWidth = kotlin.math.round(containerHeight * videoRatio).toInt()
         }
 
         var targetWidth = fitWidth

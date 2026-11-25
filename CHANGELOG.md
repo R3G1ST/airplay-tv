@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.2.3
+
+- Log the SPS/PPS of each mirroring stream (diagnostics for the 1080p black
+  picture on Amlogic codecs).
+
+## 1.2.2
+
+- Reverted the decoder operating-rate hints added in 1.2.1: on this Amlogic
+  codec they made it accept input but never output a frame (black picture).
+  The full-frame (no-overscan) change and FPS telemetry are kept.
+
+## 1.2.1 — sharper mirroring, 60 fps
+
+- The receiver no longer tells the sender it has overscan. macOS used that to
+  shrink the picture to a ~94 % safe area (we measured 1804×1016 instead of
+  1920×1080), which then had to be upscaled again — the source of the slightly
+  soft text. It now requests the full frame, so a 1080p TV gets 1:1 pixels.
+- `/info` advertises `maxFPS = 60`, and the decoder is told it decodes a 60 fps
+  live stream (`KEY_OPERATING_RATE`), so TV codecs no longer fall back to 30 fps.
+- Aspect fitting snaps to the full screen when the ratio differs by < 0.6 %,
+  removing a pointless non-integer scale.
+- Video FPS is logged every 5 s (`video: … fps`, `decoded: … fps`) for diagnosis.
+
 ## 1.2.0 — stability and smoothness pass
 
 Full audit of the mirroring and music paths.
