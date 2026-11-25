@@ -848,11 +848,14 @@ class AirPlayServer(
 
     private fun handleTeardown(response: Response) {
         Log.i(TAG, "TEARDOWN")
-        stopStreams()
-        if (streaming) {
-            streaming = false
-            listener.onSessionEnded()
-        }
+        // macOS sends TEARDOWN when it restarts just the audio channel, while
+        // the mirroring socket keeps running. Killing everything here made the
+        // picture disappear two seconds after it appeared.
+        audio?.stop()
+        ntp?.stop()
+        ntp = null
+        // Keep the phase, the keys and the mirror socket: the cast is over only
+        // when the video connection closes (MirrorStream.onVideoEnded).
         // Keep the session keys: the sender may resume with a SETUP that only
         // carries streams (Apple Music does exactly this on pause/resume).
         streaming = false

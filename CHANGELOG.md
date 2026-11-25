@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.6
+
+- macOS sends TEARDOWN about half a second after mirroring starts (it restarts
+  its audio channel). We used to stop every stream on TEARDOWN, so the picture
+  vanished and the app fell back to the last music track. TEARDOWN now stops
+  only the audio channel; the video ends when its own socket closes.
+
 ## 1.0.5
 
 - Reopening the app during an active mirroring no longer shows a frozen or
