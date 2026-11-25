@@ -240,6 +240,9 @@ class AirPlayService : Service(), AirPlayServer.Listener {
      * screen away while somebody is navigating the TV.
      */
     private fun launchUi(force: Boolean = false) {
+        // Already on screen: never re-launch, or the activity re-attaches its
+        // surface and the decoder is recreated every few seconds (black picture).
+        if (MainActivity.isVisible) return
         val now = System.currentTimeMillis()
         if (now - lastUiLaunch < 4000) return
 

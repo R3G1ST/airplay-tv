@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2
+
+- The auto-return ticker no longer re-launches the activity when it is already
+  on screen. It used to fire every 4 s, re-attaching the surface and recreating
+  the decoder each time, so the picture never appeared (black screen).
+  Visibility is now tracked with onStart/onStop, which is reliable on TV.
+
 ## 1.1.1
 
 - Music after a mirroring session used to stay on a black video surface: the

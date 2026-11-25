@@ -861,9 +861,18 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         return super.onKeyDown(keyCode, event)
     }
 
+    override fun onStart() {
+        super.onStart()
+        isVisible = true
+    }
+
+    override fun onStop() {
+        isVisible = false
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
-        isVisible = true
         AppState.addListener(stateListener)
         // Re-attach the surface: after the activity was in the background the
         // decoder may still point at a dead surface.
@@ -874,7 +883,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onPause() {
-        isVisible = false
         AppState.removeListener(stateListener)
         super.onPause()
     }
