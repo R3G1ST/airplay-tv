@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.8
+
+- Fixed a black picture from macOS: a new mirroring SETUP could reuse the
+  previous stream's port and AES key, so every frame decrypted to garbage after
+  a reconnect. A new SETUP now always restarts the stream with the new key.
+- Malformed-frame warnings are rate-limited instead of flooding the log at
+  60 fps.
+
 ## 1.1.7
 
 - A TV whose model is reported as "Chromecast" (many Android TVs) is no longer

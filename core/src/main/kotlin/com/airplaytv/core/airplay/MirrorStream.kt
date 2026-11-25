@@ -43,6 +43,7 @@ class MirrorStream(
 
     @Volatile private var aesKey: ByteArray? = null
     @Volatile private var aesIv: ByteArray? = null
+    private var streamConnectionId: Long = 0
 
     val localPort: Int get() = serverSocket?.localPort ?: 0
 
@@ -66,7 +67,13 @@ class MirrorStream(
 
     @Synchronized
     fun start(streamConnectionId: Long, aesKey: ByteArray, ecdhSecret: ByteArray): Int {
-        if (running) return localPort
+        // A new SETUP carries a new streamConnectionId and therefore a new key.
+        // Returning the old port here (the previous behaviour) silently kept the
+        // previous key, so a sender that reconnected mid-session — macOS does it
+        // after its connections are closed — produced undecryptable garbage.
+        if (running && this.streamConnectionId == streamConnectionId) return localPort
+        if (running) stop()
+        this.streamConnectionId = streamConnectionId
         val material = deriveKey(streamConnectionId, aesKey, ecdhSecret)
         this.aesKey = material.copyOfRange(0, 16)
         this.aesIv = material.copyOfRange(16, 32)
@@ -148,6 +155,7 @@ class MirrorStream(
         val ctr = AesCtr(key, iv)
         var firstPts: Long? = null
         var frameCount = 0L
+        var badFraming = 0L
 
         while (running) {
             readFully(input, header, 128)
@@ -180,7 +188,11 @@ class MirrorStream(
                         offset += 4 + nalLength
                     }
                     if (!ok) {
-                        Log.w(TAG, "malformed NAL framing (offset=$offset size=${decrypted.size})")
+                        // A wrong key makes every packet fail; log the first ones
+                        // instead of flooding logcat at 60 fps.
+                        if (badFraming++ < 5 || badFraming % 600 == 0L) {
+                            Log.w(TAG, "malformed NAL framing (offset=$offset size=${decrypted.size}, total=$badFraming)")
+                        }
                         continue
                     }
                     val rawPts = ntpToMicros(Bytes.le64(header, 8))
