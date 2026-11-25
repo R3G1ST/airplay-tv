@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.6
+
+- Fixed a crash on the first cast after 1.4.5: the sender-name pill was read
+  before it existed (`sourcePill has not been initialized`). The view is now
+  always created with the player layout and the reference is null-safe.
+
 ## 1.4.5
 
 - The sender's name is now shown: the pill above the track title on the music

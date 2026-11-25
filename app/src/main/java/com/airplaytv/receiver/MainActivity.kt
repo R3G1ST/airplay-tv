@@ -66,7 +66,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var interRegular: android.graphics.Typeface? = null
     private var interSemiBold: android.graphics.Typeface? = null
     private lateinit var appTitle: TextView
-    private lateinit var sourcePill: TextView
+    private var sourcePill: TextView? = null
     private var statusHalo: View? = null
     private var statusPulse: android.animation.ValueAnimator? = null
     private var statusColor = 0xFF34C759.toInt()
@@ -369,16 +369,19 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         row.addView(column, LinearLayout.LayoutParams(dp(484), ViewGroup.LayoutParams.WRAP_CONTENT))
 
         val pill = TextView(this).apply {
-            text = "  AirPlay  "
+            text = "AirPlay"
             setTextColor(Color.parseColor("#D0D0D5"))
             textSize = 13f
-            letterSpacing = 0.12f
+            letterSpacing = 0.04f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
             background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
                 setColor(Color.parseColor("#26FFFFFF"))
             }
-            setPadding(dp(10), dp(5), dp(10), dp(5))
+            setPadding(dp(12), dp(5), dp(12), dp(5))
         }
+        sourcePill = pill
         column.addView(pill, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -839,7 +842,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private fun renderNowPlaying(state: AppState.Snapshot) {
         val sender = state.senderName.trim()
-        sourcePill.text = if (sender.isBlank()) "AirPlay" else sender.take(30)
+        sourcePill?.text = if (sender.isBlank()) "AirPlay" else sender.take(30)
         trackTitle.text = state.trackTitle.ifBlank { "Играет музыка" }
         trackArtist.text = state.trackArtist
         trackAlbum.text = state.trackAlbum
