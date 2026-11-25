@@ -113,3 +113,4 @@ Requires JDK 17 and Android SDK 35. The `TOOLS` environment variable points to t
 GPLv3. See [LICENSE](LICENSE).
 
 The FairPlay key handling is derived from the publicly available reference implementations (RPiPlay, UxPlay, OmgHax), which is why the project is GPLv3. The ALAC decoder is a port of Apple's Apache-2.0 reference code. Protocol work stands on the shoulders of RPiPlay, UxPlay and shairport-sync — thank you.
+The UI is set in [Inter](https://rsms.me/inter/) (SIL Open Font License 1.1), a legal, metrically close stand-in for Apple's SF Pro, which cannot be redistributed. Latin and Cyrillic are embedded as an APK subset; the licence is in `app/src/main/assets/fonts/OFL.txt`.

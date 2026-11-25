@@ -113,3 +113,4 @@ core/   протокол: mDNS, HTTP/RTSP, спаривание, FairPlay, ALAC,
 GPLv3. См. [LICENSE](LICENSE).
 
 Обработка ключей FairPlay портирована из публичных эталонных реализаций (RPiPlay, UxPlay, OmgHax) — поэтому проект под GPLv3. ALAC-декодер — порт открытого кода Apple (Apache 2.0). Протокольная работа опирается на RPiPlay, UxPlay и shairport-sync — спасибо их авторам.
+Интерфейс набран шрифтом [Inter](https://rsms.me/inter/) (SIL Open Font License 1.1) — это легальный близкий аналог SF Pro от Apple; сам SF Pro распространять нельзя. Кириллица и латиница включены в APK подмножеством, лицензия лежит в `app/src/main/assets/fonts/OFL.txt`.

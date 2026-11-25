@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 — typography
+
+- Bundled **Inter** (SIL OFL 1.1) as the UI typeface — a legal, metrically close
+  stand-in for Apple's SF Pro, which cannot be redistributed. Latin, Cyrillic,
+  digits and punctuation are subset to ~30 KB per weight (60 KB total).
+- App title and track title use Semibold; body text uses Regular.
+- Timeline digits use tabular figures (`tnum`), so the clock does not wobble.
+
 ## 1.3.8
 
 - The now-playing row is slightly narrower (cover 340 dp, gap 40 dp), so the

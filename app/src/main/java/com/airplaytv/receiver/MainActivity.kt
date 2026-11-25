@@ -63,6 +63,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var timeElapsed: TextView
     private lateinit var timeRemaining: TextView
     private var shownArtwork: ByteArray? = null
+    private var interRegular: android.graphics.Typeface? = null
+    private var interSemiBold: android.graphics.Typeface? = null
+    private lateinit var appTitle: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,7 +78,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         window.navigationBarColor = Color.BLACK
 
         aspectMode = DeviceIdentity.aspectMode(this)
+        loadFonts()
         buildUi()
+        applyFonts(root)
         startReceiverService()
         ensureOverlayPermission()
         ensureUsageAccess()
@@ -97,6 +102,41 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
             }, 2500)
         }
+    }
+
+    /**
+     * Inter (SIL OFL) is used as a legal, metrically close stand-in for Apple's
+     * SF Pro, which may not be redistributed. Only Latin + Cyrillic + digits are
+     * subset into the APK (~30 KB per weight).
+     */
+    private fun loadFonts() {
+        interRegular = try {
+            android.graphics.Typeface.createFromAsset(assets, "fonts/inter_regular.ttf")
+        } catch (_: Throwable) {
+            null
+        }
+        interSemiBold = try {
+            android.graphics.Typeface.createFromAsset(assets, "fonts/inter_semibold.ttf")
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun applyFonts(view: android.view.View) {
+        if (view is TextView) interRegular?.let { view.typeface = it }
+        if (view is android.view.ViewGroup) {
+            for (i in 0 until view.childCount) applyFonts(view.getChildAt(i))
+        }
+    }
+
+    private fun applyDisplayFonts() {
+        interSemiBold?.let {
+            appTitle.typeface = it
+            trackTitle.typeface = it
+        }
+        // Tabular digits: the timeline does not wobble while counting.
+        timeElapsed.fontFeatureSettings = "tnum"
+        timeRemaining.fontFeatureSettings = "tnum"
     }
 
     private fun buildUi() {
@@ -129,14 +169,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             bottomMargin = dp(28)
         })
 
-        val title = TextView(this).apply {
+        appTitle = TextView(this).apply {
             text = "AirPlay TV"
             setTextColor(Color.WHITE)
             textSize = 34f
             letterSpacing = 0.02f
             gravity = Gravity.CENTER
         }
-        overlay.addView(title, wrapParams())
+        overlay.addView(appTitle, wrapParams())
 
         deviceText = TextView(this).apply {
             setTextColor(Color.parseColor("#8E8E93"))
@@ -383,6 +423,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         ))
+
+        // Regular everywhere, display weight for the app title and the track.
+        applyFonts(root)
+        applyDisplayFonts()
     }
 
     private fun button(label: String, onClick: () -> Unit): TextView =
