@@ -437,11 +437,20 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun ensureUsageAccess() {
         try {
             val appOps = getSystemService(android.content.Context.APP_OPS_SERVICE) as android.app.AppOpsManager
-            val mode = appOps.unsafeCheckOpNoThrow(
-                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
-                android.os.Process.myUid(),
-                packageName,
-            )
+            @Suppress("DEPRECATION")
+            val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(
+                    android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    android.os.Process.myUid(),
+                    packageName,
+                )
+            } else {
+                appOps.checkOpNoThrow(
+                    android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    android.os.Process.myUid(),
+                    packageName,
+                )
+            }
             if (mode == android.app.AppOpsManager.MODE_ALLOWED) return
         } catch (_: Throwable) {
             return
@@ -890,8 +899,25 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        MainActivity.hasWindowFocus = hasFocus
+        if (!hasFocus) {
+            // Covered by the launcher or another app: the surface is about to
+            // die, so stop decoding instead of feeding a dead surface.
+            AirPlayService.instance?.onUiHidden()
+        } else {
+            surfaceView.holder.surface?.let {
+                AirPlayService.attachSurfaceFromUi(it, forceReconfigure = true)
+            }
+        }
+    }
+
     companion object {
         @Volatile
         var isVisible: Boolean = false
+
+        @Volatile
+        var hasWindowFocus: Boolean = false
     }
 }

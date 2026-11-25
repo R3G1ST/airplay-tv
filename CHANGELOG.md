@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.9
+
+- Decoder watchdog: if frames keep arriving but the codec produces no output for
+  3 s, it is recreated automatically (some TV codecs stall after a surface change).
+- The receiver stops decoding as soon as its window loses focus, so it never
+  feeds a dead surface.
+- Auto-return now checks window focus, not just "resumed": a receiver covered by
+  the launcher comes back after ~12 s of remote inactivity.
+
 ## 1.0.8
 
 - Fixed a layout feedback loop: the layout listener re-applied the surface size,

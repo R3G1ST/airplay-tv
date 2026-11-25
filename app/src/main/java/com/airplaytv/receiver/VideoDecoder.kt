@@ -72,9 +72,12 @@ class VideoDecoder(
                         c.queueInputBuffer(index, 0, data.size, ptsMicros, 0)
                         lastInputAt = android.os.SystemClock.elapsedRealtime()
                         val now = android.os.SystemClock.elapsedRealtime()
-                        if (lastOutputAt > 0 && now - lastOutputAt > 5_000) {
-                            Log.w(TAG, "decoder stalled: input flowing but no output for ${now - lastOutputAt}ms")
+                        if (lastOutputAt > 0 && now - lastOutputAt > 3_000) {
+                            Log.w(TAG, "decoder stalled for ${now - lastOutputAt}ms, recreating")
                             lastOutputAt = now
+                            // Self-heal: some TV codecs stop producing frames after
+                            // a surface change. Recreate and continue.
+                            configureLocked()
                         }
                         break
                     }
@@ -169,6 +172,13 @@ class VideoDecoder(
         try {
             c.release()
         } catch (_: Throwable) {
+        }
+    }
+
+    /** Stops decoding but keeps SPS/PPS so the stream can resume without a new config. */
+    fun pause() {
+        synchronized(lock) {
+            releaseCodecLocked()
         }
     }
 

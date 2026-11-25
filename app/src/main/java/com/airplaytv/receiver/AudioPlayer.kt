@@ -138,7 +138,10 @@ class AudioPlayer {
                 val underruns = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                     try { t.underrunCount } catch (_: Throwable) { -1 }
                 } else -1
-                Log.i(TAG, "alac frames=$pcmFrames underruns=$underruns buf=${t.bufferSizeInFrames}f")
+                val bufferFrames = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                try { t.bufferSizeInFrames } catch (_: Throwable) { -1 }
+            } else -1
+            Log.i(TAG, "alac frames=$pcmFrames underruns=$underruns buf=${bufferFrames}f")
             }
         } catch (e: Throwable) {
             // The first packets of an Apple Music stream can carry format
@@ -194,7 +197,10 @@ class AudioPlayer {
             val underruns = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                 try { t.underrunCount } catch (_: Throwable) { -1 }
             } else -1
-            Log.i(TAG, "aac chunks=$pcmFrames underruns=$underruns buf=${t.bufferSizeInFrames}f")
+            val bufferFrames = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                try { t.bufferSizeInFrames } catch (_: Throwable) { -1 }
+            } else -1
+            Log.i(TAG, "aac chunks=$pcmFrames underruns=$underruns buf=${bufferFrames}f")
         }
         try {
             t.write(pcm, 0, pcm.size)

@@ -162,6 +162,11 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         super.onDestroy()
     }
 
+    /** The receiver window went to the background: stop decoding to a dead surface. */
+    fun onUiHidden() {
+        if (::videoDecoder.isInitialized) videoDecoder.pause()
+    }
+
     fun attachSurface(surface: Surface?, forceReconfigure: Boolean = false) {
         pendingSurface = surface
         if (::videoDecoder.isInitialized) videoDecoder.setSurface(surface, forceReconfigure)
@@ -235,7 +240,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
      * screen away while somebody is navigating the TV.
      */
     private fun launchUi(force: Boolean = false) {
-        if (MainActivity.isVisible) return
+        if (MainActivity.isVisible && MainActivity.hasWindowFocus) return
         val now = System.currentTimeMillis()
         if (now - lastUiLaunch < 4000) return
 
@@ -346,7 +351,9 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         }
     }
 
-    private val boosted = ThreadLocal.withInitial { false }
+    private val boosted = object : ThreadLocal<Boolean>() {
+        override fun initialValue(): Boolean = false
+    }
 
     private fun boostCurrentThread(priority: Int) {
         if (boosted.get()) return
@@ -373,7 +380,7 @@ class AirPlayService : Service(), AirPlayServer.Listener {
                 // goes quiet exactly when the phone does.
                 audioPlayer.flushOutput()
             }
-            if (idle > 20_000) {
+            if (idle > 60_000) {
                 // Really gone (not a pause): free the audio path and hand the
                 // screen back to the system.
                 audioPlayer.release()
