@@ -10,6 +10,7 @@ object DeviceIdentity {
     private const val KEY_NAME = "device_name"
     private const val KEY_ASPECT = "aspect_mode"
     private const val KEY_VOLUME = "last_volume"
+    private const val IDENTITY_FILE = "airplay-identity.seed"
 
     fun deviceId(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -54,6 +55,24 @@ object DeviceIdentity {
 
     fun setAspectMode(context: Context, mode: Int) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_ASPECT, mode).apply()
+    }
+
+    /**
+     * Ed25519 seed of the receiver identity. It must survive restarts: senders
+     * remember the public key, and a new one mid-pairing aborts the session.
+     */
+    fun identitySeed(context: Context): ByteArray? = try {
+        val file = java.io.File(context.filesDir, IDENTITY_FILE)
+        if (!file.exists()) null else file.readBytes().takeIf { it.size == 32 }
+    } catch (_: Throwable) {
+        null
+    }
+
+    fun setIdentitySeed(context: Context, seed: ByteArray) {
+        try {
+            java.io.File(context.filesDir, IDENTITY_FILE).writeBytes(seed)
+        } catch (_: Throwable) {
+        }
     }
 
     private fun defaultName(): String {

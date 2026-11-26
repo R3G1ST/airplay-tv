@@ -3,6 +3,7 @@ package com.airplaytv.core.airplay
 import com.airplaytv.core.crypto.AesCtr
 import com.airplaytv.core.crypto.Ed25519
 import com.airplaytv.core.crypto.KeyPairRaw
+import com.airplaytv.core.crypto.RsaAppleKey
 import com.airplaytv.core.crypto.X25519
 import com.airplaytv.core.fairplay.FairPlayKeyExchange
 import com.airplaytv.core.plist.PArray
@@ -27,6 +28,7 @@ import com.airplaytv.core.plist.str
 import com.airplaytv.core.rtsp.HttpServer
 import com.airplaytv.core.rtsp.Request
 import com.airplaytv.core.rtsp.Response
+import com.airplaytv.core.util.Base64
 import com.airplaytv.core.util.Bytes
 import com.airplaytv.core.util.Log
 
@@ -41,7 +43,20 @@ import com.airplaytv.core.util.Log
 class AirPlayServer(
     private val config: Config,
     private val listener: Listener,
+    private val identityStorage: IdentityStorage? = null,
 ) {
+    /**
+     * Persists the receiver's Ed25519 identity between launches. Senders cache
+     * this key: regenerating it on every start made macOS drop the session in
+     * the middle of pair-verify.
+     */
+    interface IdentityStorage {
+        /** 32-byte Ed25519 seed, or null when nothing is stored yet. */
+        fun load(): ByteArray?
+
+        fun save(seed: ByteArray)
+    }
+
     interface Listener {
         fun onSessionStarted(deviceName: String?)
         fun onSessionEnded()
@@ -165,6 +180,11 @@ class AirPlayServer(
 
     @Volatile private var streaming = false
     @Volatile private var activeClientIp: String? = null
+
+    /** Classic RAOP audio state from `ANNOUNCE`, used by the legacy path. */
+    private var raopAesKey: ByteArray? = null
+    private var raopAesIv: ByteArray? = null
+    private var raopSamplesPerFrame: Int = 352
     /** Human-readable sender name from the SETUP plist ("iPhone (Никита)"). */
     @Volatile private var senderName: String? = null
     private val sessionCounter = java.util.concurrent.atomic.AtomicLong(0)
@@ -172,6 +192,37 @@ class AirPlayServer(
     private enum class PairingStatus { INITIAL, SETUP, HANDSHAKE, FINISHED }
 
     private val http = HttpServer(config.port) { request, response -> handle(request, response) }
+
+    /**
+     * Reverse HTTP channels ("PTTH/1.0"), one per sender. AirPlay video needs
+     * one: after `/play` the receiver asks the sender for HLS playlists over
+     * this connection.
+     */
+    private val reverseChannels = java.util.concurrent.ConcurrentHashMap<String, ReverseChannel>()
+
+    init {
+        http.upgradeHandler = { request, socket, input, output ->
+            onReverseUpgraded(request, socket, input, output)
+        }
+    }
+
+    private fun onReverseUpgraded(
+        request: Request,
+        socket: java.net.Socket,
+        input: java.io.InputStream,
+        output: java.io.BufferedOutputStream,
+    ) {
+        val ip = request.remoteAddress.hostAddress ?: "unknown"
+        val channel = ReverseChannel(socket, input, output)
+        reverseChannels[ip] = channel
+        Log.i(TAG, "reverse channel open for $ip")
+        try {
+            channel.readLoop()
+        } finally {
+            reverseChannels.remove(ip, channel)
+            Log.i(TAG, "reverse channel closed for $ip")
+        }
+    }
 
     val deviceId: String get() = config.deviceId
 
@@ -204,7 +255,7 @@ class AirPlayServer(
     fun audioIdleMillis(): Long = audio?.millisSinceLastPacket() ?: Long.MAX_VALUE
 
     fun start() {
-        identity = Ed25519.generate()
+        identity = loadOrCreateIdentity()
         mirror = MirrorStream(object : MirrorStream.VideoSink {
             override fun onVideoConfig(sps: ByteArray, pps: ByteArray, width: Int, height: Int) =
                 listener.onVideoConfig(sps, pps, width, height)
@@ -240,6 +291,30 @@ class AirPlayServer(
         Log.i(TAG, "AirPlay receiver \"${config.name}\" on port ${http.localPort}")
     }
 
+    private fun loadOrCreateIdentity(): KeyPairRaw {
+        val stored = try {
+            identityStorage?.load()
+        } catch (e: Throwable) {
+            Log.w(TAG, "cannot read stored identity: ${e.message}")
+            null
+        }
+        if (stored != null && stored.size == 32) {
+            return try {
+                KeyPairRaw(stored, Ed25519.publicKey(stored))
+            } catch (e: Throwable) {
+                Log.w(TAG, "stored identity is invalid, generating a new one: ${e.message}")
+                Ed25519.generate()
+            }
+        }
+        val fresh = Ed25519.generate()
+        try {
+            identityStorage?.save(fresh.privateKey)
+        } catch (e: Throwable) {
+            Log.w(TAG, "cannot store identity: ${e.message}")
+        }
+        return fresh
+    }
+
     fun stop() {
         stopStreams()
         http.stop()
@@ -257,7 +332,7 @@ class AirPlayServer(
     private fun macWithColons(): String =
         config.deviceId.chunked(2).joinToString(":")
 
-    private val txtFeatures = "0x5A7FFEE6,0x0"
+    private val txtFeatures = "0x5A7FFEF7,0x0"
 
     fun airplayTxt(): Map<String, String> = linkedMapOf(
         "deviceid" to macWithColons(),
@@ -265,7 +340,12 @@ class AirPlayServer(
         "flags" to "0x4",
         "model" to config.model,
         "pk" to Bytes.hex(identity.publicKey),
+        // macOS 27's AirPlayXPCHelper calls these "pairing IDs": `pi` is the
+        // AirPlay identity, `psi` the system pairing identity. Without them it
+        // caches the endpoint as unpaired and refuses video before any TCP.
         "pi" to PI_UUID,
+        "psi" to PI_UUID,
+        "gid" to PI_UUID,
         "srcvers" to config.sourceVersion,
         "vv" to "2",
         "pw" to "false",
@@ -278,6 +358,10 @@ class AirPlayServer(
         // advertising only "3" made it refuse to connect at all, while the
         // presence of ALAC (1) makes it stream losslessly.
         "cn" to "1,2,3",
+        // macOS's AirPlayXPCHelper keys its endpoint cache on these two:
+        // without `pi` it logs "device found without pairing ID" and refuses
+        // to open a video session before it ever connects.
+        "da" to "true",
         "et" to "0,3,5",
         "vv" to "2",
         "ft" to "0x5A7FFEE6,0x0",
@@ -294,12 +378,17 @@ class AirPlayServer(
         "vs" to config.sourceVersion,
         "vn" to "65537",
         "pk" to Bytes.hex(identity.publicKey),
+        "pi" to PI_UUID,
     )
 
     // ------------------------------------------------------------- RTSP routing
 
     private fun handle(request: Request, response: Response) {
         val path = request.url.substringBefore('?')
+        // Keep the log readable: feedback/property traffic is periodic and noisy.
+        if (path !in QUIET_PATHS) {
+            Log.i(TAG, "${request.method} $path from ${request.remoteAddress.hostAddress}")
+        }
         when {
             request.method == "GET" && path == "/info" -> handleInfo(response)
             request.method == "POST" && path == "/pair-setup" -> handlePairSetup(request, response)
@@ -310,8 +399,15 @@ class AirPlayServer(
             request.method == "POST" && path == "/audioMode" -> Unit
             request.method == "POST" && path == "/pair-pin-start" -> Unit
             request.method == "POST" && path == "/command" -> Unit
-            request.method == "OPTIONS" ->
-                response.header("Public", "SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER")
+            request.method == "OPTIONS" -> {
+                Log.i(TAG, "OPTIONS headers: ${request.headers}")
+                response.header(
+                    "Public",
+                    "ANNOUNCE, SETUP, RECORD, PAUSE, FLUSH, TEARDOWN, OPTIONS, " +
+                        "GET_PARAMETER, SET_PARAMETER",
+                )
+            }
+            request.method == "ANNOUNCE" -> handleAnnounce(request, response)
             request.method == "SETUP" -> handleSetup(request, response)
             request.method == "RECORD" -> handleRecord(request, response)
             request.method == "POST" && path == "/play" -> handlePlay(request, response)
@@ -320,13 +416,13 @@ class AirPlayServer(
             request.method == "POST" && path == "/scrub" -> handleScrub(request, response)
             request.method == "GET" && path == "/scrub" -> handleScrub(request, response)
             request.method == "GET" && path == "/playback-info" -> handlePlaybackInfo(response)
-            request.method == "POST" && path == "/reverse" -> handleReverse(response)
+            request.method == "POST" && path == "/reverse" -> handleReverse(request, response)
             request.method == "POST" && path == "/setProperty" -> Unit
             request.method == "PUT" && path == "/setProperty" -> Unit
             request.method == "PUT" && path == "/getProperty" -> handlePlaybackInfo(response)
             request.method == "GET" && path == "/server-info" -> handleServerInfo(response)
             request.method == "POST" && path == "/getProperty" -> handlePlaybackInfo(response)
-            request.method == "POST" && path == "/action" -> Unit
+            request.method == "POST" && path == "/action" -> handleAction(request, response)
             request.method == "GET" && path == "/playback-info" -> handlePlaybackInfo(response)
             request.method == "TEARDOWN" -> handleTeardown(response)
             request.method == "FLUSH" -> Unit
@@ -526,10 +622,13 @@ class AirPlayServer(
     private fun handleFpSetup(request: Request, response: Response) {
         val data = request.body
         val fp = client(request).fairPlay
+        Log.i(TAG, "fp-setup: ${data.size}b ${Bytes.hex(data.copyOfRange(0, minOf(data.size, 16)))}")
         when (data.size) {
             16 -> {
                 val reply = fp.setup(data)
                 if (reply == null) {
+                    Log.w(TAG, "fp-setup rejected: version=${data[4].toInt() and 0xff} " +
+                        "mode=${data[14].toInt() and 0xff}")
                     response.status = 400
                     return
                 }
@@ -576,8 +675,62 @@ class AirPlayServer(
 
     // ----------------------------------------------------------------- SETUP
 
+    private fun looksLikePlist(body: ByteArray): Boolean {
+        if (body.isEmpty()) return false
+        if (body.size >= 6 &&
+            body[0] == 'b'.code.toByte() &&
+            body[1] == 'p'.code.toByte() &&
+            body[2] == 'l'.code.toByte() &&
+            body[3] == 'i'.code.toByte() &&
+            body[4] == 's'.code.toByte() &&
+            body[5] == 't'.code.toByte()
+        ) {
+            return true
+        }
+        val text = body.toString(Charsets.UTF_8).trimStart()
+        return text.startsWith("<?xml") || text.startsWith("<plist")
+    }
+
+    /**
+     * Classic RAOP `SETUP` has an empty body; the ports are in the `Transport`
+     * header and the answer must carry a `Session` plus our data/control ports.
+     * This is the path macOS Music takes after `ANNOUNCE`.
+     */
+    private fun handleRaopSetup(request: Request, response: Response) {
+        val transport = request.header("Transport").orEmpty()
+        val key = raopAesKey
+        val iv = raopAesIv ?: ByteArray(16)
+        if (key == null) {
+            Log.w(TAG, "RAOP SETUP without rsaaeskey: audio will not decrypt")
+        }
+        listener.onAudioCodec(2, raopSamplesPerFrame)
+        val ok = audio?.start(
+            key ?: ByteArray(16),
+            iv,
+            ByteArray(0),
+            2,
+            plainKey = true,
+        ) ?: false
+        val dataPort = audio?.dataPort ?: 0
+        val controlPort = audio?.controlPort ?: 0
+        val session = RAOP_SESSION.incrementAndGet()
+        response.header("Audio-Latency", "11025")
+        response.header("Audio-Jack-Status", "connected; type=analog")
+        response.header("Session", session.toString())
+        response.header(
+            "Transport",
+            "RTP/AVP/UDP;unicast;mode=record;server_port=$dataPort;control_port=$controlPort",
+        )
+        response.body = ByteArray(0)
+        Log.i(TAG, "RAOP SETUP ok=$ok data=$dataPort control=$controlPort transport=$transport")
+    }
+
     private fun handleSetup(request: Request, response: Response) {
         preemptIfNeeded(request)
+        if (!looksLikePlist(request.body)) {
+            handleRaopSetup(request, response)
+            return
+        }
         val root = try {
             Plist.parse(request.body)
         } catch (e: Throwable) {
@@ -649,15 +802,19 @@ class AirPlayServer(
                 val streamKey = keyCopy
                 val streamIv = ivCopy
                 val streamSecret = secret
-                if (streamKey == null || streamIv == null || streamSecret == null) {
-                    Log.e(TAG, "SETUP: stream requested before keys are ready (type=$type)")
+                // Video-only sessions never exchange FairPlay keys, so a
+                // missing key must only reject the streams that need one.
+                if ((type == 110L || type == 96L) &&
+                    (streamKey == null || streamIv == null || streamSecret == null)
+                ) {
+                    Log.e(TAG, "SETUP: stream $type requested before keys are ready")
                     response.status = 400
                     return
                 }
                 when (type) {
                     110L -> {
                         val id = stream.int("streamConnectionID") ?: 0L
-                        val port = mirror?.start(id, streamKey, streamSecret) ?: 0
+                        val port = mirror?.start(id, streamKey!!, streamSecret!!) ?: 0
                         outStreams.items.add(
                             pdict(
                                 "dataPort" to PInt(port.toLong()),
@@ -671,7 +828,7 @@ class AirPlayServer(
                         val ct = stream.int("ct")?.toInt() ?: 8
                         val spf = stream.int("spf")?.toInt() ?: 352
                         listener.onAudioCodec(ct, spf)
-                        val ok = audio?.start(streamKey, streamIv, streamSecret, ct) ?: false
+                        val ok = audio?.start(streamKey!!, streamIv!!, streamSecret!!, ct) ?: false
                         outStreams.items.add(
                             pdict(
                                 "dataPort" to PInt((audio?.dataPort ?: 0).toLong()),
@@ -682,7 +839,9 @@ class AirPlayServer(
                         Log.i(TAG, "SETUP: audio stream ok=$ok dataPort=${audio?.dataPort} controlPort=${audio?.controlPort}")
                     }
 
-                    else -> Log.w(TAG, "SETUP: unsupported stream type $type")
+                    // Video sessions (AirPlay HTTP /play) carry no media
+                    // stream here; the URL arrives in POST /play.
+                    else -> Log.i(TAG, "SETUP: stream type $type ignored (handled via /play)")
                 }
             }
             out.map["streams"] = outStreams
@@ -734,7 +893,24 @@ class AirPlayServer(
                 ?.let { headers[key] = it }
         }
         videoActive = true
-        Log.i(TAG, "PLAY $url (start ${"%.2f".format(java.util.Locale.US, start)}s)")
+        Log.i(TAG, "PLAY $url (start ${"%.2f".format(java.util.Locale.US, start)}s) headers=${request.headers}")
+
+        // A sender-local playlist (".../master.m3u8") has to be fetched through
+        // the reverse channel: we ask for it and the sender answers with an
+        // /action request. Absolute http(s) URLs (Safari, AVPlayer, most apps)
+        // are fetched by the local player directly.
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            val channel = reverseChannels[request.remoteAddress.hostAddress]
+            if (channel == null) {
+                Log.w(TAG, "PLAY local playlist without reverse channel: $url")
+            } else {
+                try {
+                    channel.requestPlaylist(url, request.header("X-Apple-Session-ID"))
+                } catch (e: Throwable) {
+                    Log.w(TAG, "FCUP request failed: ${e.message}")
+                }
+            }
+        }
         listener.onPlayVideo(url, start, headers)
         response.header("Content-Type", "application/x-apple-binary-plist")
         response.body = Plist.encodeBinary(pdict("Start-Position" to PReal(start)))
@@ -830,6 +1006,22 @@ class AirPlayServer(
         response.header("Content-Type", "text/parameters")
     }
 
+    /**
+     * `POST /action` carries the reply to an FCUP playlist request
+     * (`playlistAdd` / `unhandledURLResponse`). HLS-over-reverse is not
+     * implemented yet, but logging the type makes the next step obvious.
+     */
+    private fun handleAction(request: Request, response: Response) {
+        val type = try {
+            (Plist.parse(request.body) as? PDict)?.str("type")
+        } catch (_: Throwable) {
+            null
+        }
+        Log.i(TAG, "ACTION type=$type (${request.body.size} bytes)")
+        response.header("Content-Type", "application/x-apple-binary-plist")
+        response.body = ByteArray(0)
+    }
+
     private fun handleRate(request: Request, response: Response) {
         val rate = parseRate(request.body) ?: 1.0
         Log.i(TAG, "RATE $rate")
@@ -891,12 +1083,89 @@ class AirPlayServer(
      * We answer with an empty plist: the important part is that the sender gets
      * a 200 instead of retrying forever.
      */
-    private fun handleReverse(response: Response) {
+    /**
+     * `POST /reverse` + `Upgrade: PTTH/1.0` turns this TCP connection into the
+     * sender-to-receiver event channel (reverse HTTP). Answering plain `200`
+     * here — as the receiver used to — makes macOS abort the whole session
+     * before `/play`, which is the "Не удалось подключиться" alert.
+     */
+    private fun handleReverse(request: Request, response: Response) {
+        val upgrade = request.header("Upgrade")
+        if (upgrade != null && upgrade.contains("PTTH", ignoreCase = true)) {
+            response.status = 101
+            response.reason = "Switching Protocols"
+            response.protocol = "HTTP/1.1"
+            response.header("Connection", "Upgrade")
+            response.header("Upgrade", "PTTH/1.0")
+            response.upgrade = true
+            Log.i(TAG, "reverse upgrade accepted from ${request.remoteAddress.hostAddress} " +
+                "(purpose=${request.header("X-Apple-Purpose")})")
+            return
+        }
+        // Old senders use /reverse as a plain keep-alive probe.
         response.header("Content-Type", "application/x-apple-binary-plist")
         response.body = ByteArray(0)
     }
 
     // ---------------------------------------------------------------- RECORD
+
+    /**
+     * Classic RAOP `ANNOUNCE`: macOS Music sends the SDP with the ALAC format,
+     * the RSA-wrapped AES key (`rsaaeskey`) and the IV (`aesiv`). Answering
+     * this is what makes macOS start an audio-only session.
+     */
+    private fun handleAnnounce(request: Request, response: Response) {
+        val sdp = request.body.toString(Charsets.UTF_8)
+        Log.i(TAG, "ANNOUNCE SDP:\n${sdp.replace("\r", "")}")
+        val rtpmap = Regex("a=rtpmap:\\d+\\s+([^\\r\\n]+)").find(sdp)?.groupValues?.get(1)?.trim()
+        val fmtp = Regex("a=fmtp:\\d+\\s+([^\\r\\n]+)").find(sdp)?.groupValues?.get(1)?.trim()
+        val rsa = Regex("a=rsaaeskey:([^\\r\\n]+)").find(sdp)?.groupValues?.get(1)?.trim()
+        // Modern macOS wraps the AES key with the FairPlay v2 session instead
+        // of the classic RSA `rsaaeskey` field.
+        val fpaes = Regex("a=fpaeskey:([^\\r\\n]+)").find(sdp)?.groupValues?.get(1)?.trim()
+        val iv = Regex("a=aesiv:([^\\r\\n]+)").find(sdp)?.groupValues?.get(1)?.trim()
+        val spf = fmtp?.split(' ')?.firstOrNull()?.toIntOrNull() ?: 352
+        val rsaBytes = rsa?.let {
+            try {
+                Base64.decode(it)
+            } catch (_: Throwable) {
+                null
+            }
+        }
+        val fpBytes = fpaes?.let {
+            try {
+                Base64.decode(it)
+            } catch (_: Throwable) {
+                null
+            }
+        }
+        val ivBytes = iv?.let {
+            try {
+                Base64.decode(it)
+            } catch (_: Throwable) {
+                null
+            }
+        }
+        val aesKey = when {
+            fpBytes != null -> client(request).fairPlay.decrypt(fpBytes)
+            rsaBytes != null -> RsaAppleKey.decryptOaep(rsaBytes)
+            else -> null
+        }
+        Log.i(
+            TAG,
+            "ANNOUNCE codec=$rtpmap fmtp=$fmtp fpaes=${fpBytes?.size ?: 0}b " +
+                "rsa=${rsaBytes?.size ?: 0}b iv=${ivBytes?.size ?: 0}b key=${aesKey?.size ?: 0}b",
+        )
+        synchronized(lock) {
+            raopAesKey = aesKey
+            raopAesIv = ivBytes
+            raopSamplesPerFrame = spf
+        }
+        if (rtpmap?.contains("AppleLossless", ignoreCase = true) == true) {
+            listener.onAudioCodec(2, spf)
+        }
+        response.header("Audio-Jack-Status", "connected; type=analog")
+    }
 
     private fun handleRecord(request: Request, response: Response) {
         preemptIfNeeded(request)
@@ -996,6 +1265,13 @@ class AirPlayServer(
     companion object {
         private const val TAG = "AirPlayServer"
 
+        /** Periodic chatter that would drown the request log. */
+        private val QUIET_PATHS = setOf(
+            "/feedback", "/setProperty", "/getProperty", "/command", "/audioMode", "/action",
+        )
+
+        private val RAOP_SESSION = java.util.concurrent.atomic.AtomicLong(0)
+
         /**
          * Feature flags. Only the low 32 bits are advertised: bit 27 tells the
          * sender it may use the legacy (AirPlay 1) pairing + streaming flow,
@@ -1003,7 +1279,7 @@ class AirPlayServer(
          * high word makes iOS/macOS pick buffered audio and AirPlay 2 video,
          * which are different protocols entirely.
          */
-        private const val FEATURES = 0x5A7FFEE6L
+        private const val FEATURES = 0x5A7FFEF7L
         const val PI_UUID = "2e388006-13ba-4041-9a67-25dd4a43d536"
         const val DISPLAY_UUID = "e0ff8a27-6738-3d56-8a16-cc53aacee925"
     }

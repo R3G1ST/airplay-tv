@@ -31,6 +31,16 @@ class Response(var status: Int = 200, var reason: String = "OK") {
     var body: ByteArray? = null
     var closeConnection: Boolean = false
 
+    /**
+     * Keep the TCP connection open after this response and hand it to
+     * [HttpServer.upgradeHandler]. This is how AirPlay's reverse HTTP channel
+     * (`POST /reverse` + `Upgrade: PTTH/1.0`) is established.
+     */
+    var upgrade: Boolean = false
+
+    /** Overrides the response protocol line (the reverse upgrade needs `HTTP/1.1`, not RTSP). */
+    var protocol: String? = null
+
     fun header(name: String, value: String): Response {
         headers[name] = value
         return this
@@ -56,7 +66,16 @@ class HttpServer(
     private var running = false
 
     private val clients = CopyOnWriteArrayList<Socket>()
+    private val upgradedClients = CopyOnWriteArrayList<Socket>()
     private var acceptThread: Thread? = null
+
+    /**
+     * Called on the connection thread when a response sets [Response.upgrade].
+     * The handler owns the socket until it returns; the server closes it after.
+     * The input stream is unbuffered, so no client bytes are lost in the handoff.
+     */
+    @Volatile
+    var upgradeHandler: ((Request, Socket, InputStream, BufferedOutputStream) -> Unit)? = null
 
     val localPort: Int get() = serverSocket?.localPort ?: port
 
@@ -92,7 +111,14 @@ class HttpServer(
             } catch (_: IOException) {
             }
         }
+        for (c in upgradedClients) {
+            try {
+                c.close()
+            } catch (_: IOException) {
+            }
+        }
         clients.clear()
+        upgradedClients.clear()
         acceptThread?.interrupt()
         acceptThread = null
     }
@@ -100,6 +126,14 @@ class HttpServer(
     /** Closes every connection opened by a given address (used when preempting a sender). */
     fun closeConnectionsFrom(address: java.net.InetAddress) {
         for (c in clients) {
+            if (c.inetAddress == address) {
+                try {
+                    c.close()
+                } catch (_: IOException) {
+                }
+            }
+        }
+        for (c in upgradedClients) {
             if (c.inetAddress == address) {
                 try {
                     c.close()
@@ -128,6 +162,7 @@ class HttpServer(
 
     private fun handleConnection(socket: Socket) {
         val remote = socket.inetAddress
+        var upgraded = false
         try {
             socket.soTimeout = SOCKET_TIMEOUT_MS
             socket.tcpNoDelay = true
@@ -165,12 +200,25 @@ class HttpServer(
                 writeResponse(output, request.version, response, request)
                 output.flush()
 
+                if (response.upgrade) {
+                    upgraded = true
+                    clients.remove(socket)
+                    upgradedClients.add(socket)
+                    Log.i(TAG, "connection upgraded: ${request.method} ${request.url} <- ${remote.hostAddress}")
+                    try {
+                        upgradeHandler?.invoke(request, socket, input, output)
+                    } catch (e: Throwable) {
+                        Log.d(TAG, "upgraded connection ended: ${e.message}")
+                    }
+                    break
+                }
+
                 if (response.closeConnection) break
             }
         } catch (e: Throwable) {
             Log.d(TAG, "connection ended: ${e.message}")
         } finally {
-            clients.remove(socket)
+            if (upgraded) upgradedClients.remove(socket) else clients.remove(socket)
             try {
                 socket.close()
             } catch (_: IOException) {
@@ -222,13 +270,17 @@ class HttpServer(
         request: Request,
     ) {
         val body = response.body ?: ByteArray(0)
-        val proto = if (version.startsWith("HTTP")) "HTTP/1.1" else "RTSP/1.0"
+        val proto = response.protocol
+            ?: if (version.startsWith("HTTP")) "HTTP/1.1" else "RTSP/1.0"
         val sb = StringBuilder()
         sb.append(proto).append(' ').append(response.status).append(' ').append(response.reason).append("\r\n")
         for ((k, v) in response.headers) {
             sb.append(k).append(": ").append(v).append("\r\n")
         }
-        if (response.headers.keys.none { it.equals("Content-Length", ignoreCase = true) }) {
+        // 101 Switching Protocols has no body by definition.
+        if (response.status != 101 &&
+            response.headers.keys.none { it.equals("Content-Length", ignoreCase = true) }
+        ) {
             sb.append("Content-Length: ").append(body.size).append("\r\n")
         }
         if (response.headers.keys.none { it.equals("Connection", ignoreCase = true) } && response.closeConnection) {

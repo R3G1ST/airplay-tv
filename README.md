@@ -94,7 +94,9 @@ core/   protocol: mDNS, HTTP/RTSP, pairing, FairPlay, ALAC, H.264 depacketizer
 - transient AirPlay 2 pairing (Ed25519 + X25519) and FairPlay key exchange;
 - screen mirroring: H.264 over TCP, AES-128-CTR, `MediaCodec` straight to the surface;
 - mirroring audio: AAC-ELD over RTP/UDP, with a reorder buffer and duplicate removal;
-- Apple Music: ALAC over RTP/UDP, decoded by our own bit-exact lossless decoder;
+- Apple Music from iPhone (AirPlay 2, FairPlay v3) and from the Mac
+  (classic RAOP, FairPlay v2, `ANNOUNCE`): ALAC over RTP/UDP, decoded by our
+  own bit-exact lossless decoder;
 - sender name and volume come from AirPlay's own plist messages; the volume is persisted;
 - the UI is set in Inter (a compact Latin + Cyrillic subset);
 - no native libraries: the APK has no `.so` files at all.

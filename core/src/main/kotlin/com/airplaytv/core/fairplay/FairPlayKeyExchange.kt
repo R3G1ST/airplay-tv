@@ -18,20 +18,42 @@ class FairPlayKeyExchange {
 
     private var handshakeMessage: ByteArray? = null
 
+    /** 2 = the newer selector-2 handshake, 3 = the classic Playfair one. */
+    private var version = 0
+    private var v2: FairPlayV2? = null
+
     /**
      * Handles the first `fp-setup` request.
      *
      * @param request16 the 16-byte request body
-     * @return a 142-byte FPLY reply, or `null` when the version (`request[4]`)
-     *   or the mode byte (`request[14]`) is unsupported
+     * @return a 142-byte FPLY reply, or `null` when the version or the mode
+     *   byte (`request[14]`) is unsupported
      */
     fun setup(request16: ByteArray): ByteArray? {
         if (request16.size != 16) return null
-        if (request16[4] != 0x03.toByte()) return null
-        val mode = request16[14].toInt() and 0xff
-        if (mode !in REPLY_MESSAGES.indices) return null
-        handshakeMessage = null
-        return REPLY_MESSAGES[mode].copyOf()
+        return when (request16[4].toInt() and 0xff) {
+            2 -> {
+                // macOS 26/27 uses FairPlay v2 for audio and video while iOS
+                // still speaks v3. Both paths must coexist per connection.
+                val exchange = v2 ?: FairPlayV2().also { v2 = it }
+                val reply = exchange.setup(request16)
+                if (reply != null) {
+                    handshakeMessage = null
+                    version = 2
+                }
+                reply
+            }
+
+            3 -> {
+                val mode = request16[14].toInt() and 0xff
+                if (mode !in REPLY_MESSAGES.indices) return null
+                handshakeMessage = null
+                version = 3
+                REPLY_MESSAGES[mode].copyOf()
+            }
+
+            else -> null
+        }
     }
 
     /**
@@ -43,6 +65,7 @@ class FairPlayKeyExchange {
      *   bytes), or `null` when the version or length is unsupported
      */
     fun handshake(request164: ByteArray): ByteArray? {
+        if (version == 2) return v2?.handshake(request164)
         if (request164.size != Playfair.SETUP_MESSAGE_SIZE) return null
         if (request164[4] != 0x03.toByte()) return null
         handshakeMessage = request164.copyOf()
@@ -60,6 +83,7 @@ class FairPlayKeyExchange {
      *   the key length is wrong
      */
     fun decrypt(encryptedKey72: ByteArray): ByteArray? {
+        if (version == 2) return v2?.decryptKey(encryptedKey72)
         val message = handshakeMessage ?: return null
         if (encryptedKey72.size != Playfair.ENCRYPTED_KEY_SIZE) return null
         return Playfair.decryptAesKey(message, encryptedKey72)
@@ -68,6 +92,8 @@ class FairPlayKeyExchange {
     /** Forgets any remembered handshake message. */
     fun reset() {
         handshakeMessage = null
+        v2 = null
+        version = 0
     }
 
     private companion object {

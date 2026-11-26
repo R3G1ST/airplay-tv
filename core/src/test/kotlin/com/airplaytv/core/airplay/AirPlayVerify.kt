@@ -89,7 +89,7 @@ object AirPlayVerify {
                 check(info.status == 200) { "GET /info failed" }
                 val infoPlist = Plist.parse(info.body) as PDict
                 check(infoPlist.str("name") == "Test TV") { "info name wrong" }
-                check(infoPlist.int("features") == 0x5A7FFEE6L) { "info features wrong: ${infoPlist.int("features")}" }
+                check(infoPlist.int("features") == 0x5A7FFEF7L) { "info features wrong: ${infoPlist.int("features")}" }
                 check(infoPlist.data("pk")!!.contentEquals(serverEd)) { "info pk does not match pair-setup key" }
                 check(infoPlist.data("txtAirPlay") != null) { "info txtAirPlay missing" }
 

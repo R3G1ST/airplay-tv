@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.6.2 — music from the Mac, video sessions
+
+macOS 27.2 uses a newer Apple handshake than iOS and then switches to classic
+RAOP for audio. The receiver only knew the old paths, so the Mac stopped at the
+first request. Music from the Mac now works end to end.
+
+- FairPlay selector 2 (FPLY record version 2): SAP exchange, HMAC-SHA1
+  confirmation and unwrapping of the 72-byte key. iOS keeps using version 3.
+- Classic RAOP: `ANNOUNCE` (SDP with ALAC, AES IV, `fpaeskey` or `rsaaeskey`),
+  empty-body `SETUP` with `Transport`, `RECORD`, and RSA/OAEP-SHA1 for older
+  senders. The Mac streams lossless ALAC with no underruns.
+- AirPlay video sessions: `POST /reverse` answers `101 Switching Protocols` and
+  becomes the PTTH reverse channel; video-only `SETUP` no longer demands
+  FairPlay keys; `/play` is reached and direct HLS/HTTP URLs are handed to the
+  local player. Sender-local playlists that need the FCUP exchange are not
+  implemented yet.
+- The `_airplay` record advertises the video feature bits (`0x5A7FFEF7`) and
+  `psi`/`gid`; without them macOS 27 logs "device found without pairing ID" and
+  refuses the session before it connects.
+- A cached track is only shown again for the same sender, so a new Mac session
+  no longer displays the iPhone's previous song.
+- The Ed25519 identity is stored in `filesDir` and reused; boot-time mDNS waits
+  for a multicast interface instead of advertising a different host name.
+- Every RTSP request is logged at INFO.
+
 ## 1.6.1 — music from the Mac
 
 - Fixed Apple Music from macOS. The receiver advertised only AAC-ELD in the

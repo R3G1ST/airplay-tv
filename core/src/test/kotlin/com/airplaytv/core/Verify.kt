@@ -11,6 +11,7 @@ private val SUITES = listOf(
     "com.airplaytv.core.plist.PlistVerify",
     "com.airplaytv.core.crypto.CryptoVerify",
     "com.airplaytv.core.fairplay.FairPlayVerify",
+    "com.airplaytv.core.fairplay.FairPlayV2Verify",
     "com.airplaytv.core.mdns.MdnsVerify",
     "com.airplaytv.core.alac.AlacVerify",
     "com.airplaytv.core.rtsp.RtspVerify",

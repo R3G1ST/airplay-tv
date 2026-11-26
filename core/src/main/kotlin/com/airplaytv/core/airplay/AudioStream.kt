@@ -53,10 +53,27 @@ class AudioStream(
     val dataPort: Int get() = dataSocket?.localPort ?: 0
     val controlPort: Int get() = controlSocket?.localPort ?: 0
 
-    fun start(aesKey: ByteArray, aesIv: ByteArray, ecdhSecret: ByteArray, ct: Int = 8): Boolean {
+    /**
+     * Starts the audio sockets.
+     *
+     * @param plainKey true for classic RAOP, where `ANNOUNCE` already carried
+     *   the final AES key; false for AirPlay 2, where the key is
+     *   `sha512(ekey, ecdhSecret)`.
+     */
+    fun start(
+        aesKey: ByteArray,
+        aesIv: ByteArray,
+        ecdhSecret: ByteArray,
+        ct: Int = 8,
+        plainKey: Boolean = false,
+    ): Boolean {
         if (running) return true
         codecType = ct
-        this.aesKey = Bytes.sha512(aesKey, ecdhSecret).copyOfRange(0, 16)
+        this.aesKey = if (plainKey) {
+            aesKey.copyOf(16)
+        } else {
+            Bytes.sha512(aesKey, ecdhSecret).copyOfRange(0, 16)
+        }
         this.aesIv = aesIv.copyOf(16)
         synchronized(sequenceLock) {
             expectedSeq = -1

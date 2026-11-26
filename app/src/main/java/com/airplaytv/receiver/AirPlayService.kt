@@ -88,6 +88,10 @@ class AirPlayService : Service(), AirPlayServer.Listener {
                 displayHeight = resources.displayMetrics.heightPixels.coerceAtLeast(1080),
             ),
             this,
+            object : AirPlayServer.IdentityStorage {
+                override fun load(): ByteArray? = DeviceIdentity.identitySeed(this@AirPlayService)
+                override fun save(seed: ByteArray) = DeviceIdentity.setIdentitySeed(this@AirPlayService, seed)
+            },
         )
         try {
             server.start()
@@ -189,11 +193,20 @@ class AirPlayService : Service(), AirPlayServer.Listener {
                         Log.e(TAG, "health: server restart failed", e)
                     }
                 }
-                if (mdns != null && mdns?.isRunning != true) {
+                if (mdns == null && nsdFallback == null) {
                     Log.w(TAG, "health: mDNS is down, restarting")
+                    try {
+                        mdnsAttempts = 0
+                        startMdns(DeviceIdentity.deviceId(this@AirPlayService), DeviceIdentity.deviceName(this@AirPlayService))
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "health: mDNS restart failed: ${e.message}")
+                    }
+                } else if (mdns != null && mdns?.isRunning != true) {
+                    Log.w(TAG, "health: mDNS responder stopped, restarting")
                     try {
                         mdns?.stop()
                         mdns = null
+                        mdnsAttempts = 0
                         startMdns(DeviceIdentity.deviceId(this@AirPlayService), DeviceIdentity.deviceName(this@AirPlayService))
                     } catch (e: Throwable) {
                         Log.w(TAG, "health: mDNS restart failed: ${e.message}")
@@ -281,6 +294,8 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         }
     }
 
+    private var mdnsAttempts = 0
+
     private fun startMdns(deviceId: String, name: String) {
         try {
             val responder = MdnsResponder(
@@ -293,11 +308,26 @@ class AirPlayService : Service(), AirPlayServer.Listener {
             responder.start()
             if (!responder.isRunning) throw IllegalStateException("no multicast interface")
             mdns = responder
+            mdnsAttempts = 0
             CoreLog.i("Mdns", "advertising ${server.airplayTxt()}")
+            return
         } catch (e: Throwable) {
+            mdns?.stop()
+            mdns = null
+            mdnsAttempts++
+            // At boot the service starts before Wi-Fi has a multicast-capable
+            // interface. Falling back to NsdManager right away advertises a
+            // different host name (Android.local), which leaves macOS with a
+            // stale device address; retry our own responder instead.
+            if (mdnsAttempts <= 15) {
+                Log.w(TAG, "mDNS not ready (${e.message}), retry $mdnsAttempts/15")
+                uiHandler.postDelayed({ if (mdns == null) startMdns(deviceId, name) }, 2000)
+                return
+            }
             Log.e(TAG, "mDNS advertising failed, falling back to NsdManager", e)
             AppState.appendLog("mDNS: ${e.message}")
             try {
+                nsdFallback?.unregister()
                 val fallback = NsdFallback(this)
                 fallback.register(name, deviceId, 7000, server.airplayTxt(), server.raopTxt())
                 nsdFallback = fallback
@@ -559,8 +589,13 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         uiHandler.postDelayed({
             if (!videoActive && AppState.snapshot.phase != AppState.Phase.PLAYING) {
                 restoreLastTrackIfNeeded()
+                val hasTrack = AppState.snapshot.trackTitle.isNotBlank()
                 AppState.update {
-                    it.copy(phase = AppState.Phase.PLAYING, subtitle = "AirPlay • музыка", detail = "")
+                    it.copy(
+                        phase = AppState.Phase.PLAYING,
+                        subtitle = if (hasTrack) "AirPlay • музыка" else "AirPlay • подключено",
+                        detail = "",
+                    )
                 }
             }
         }, 900)
@@ -677,7 +712,13 @@ class AirPlayService : Service(), AirPlayServer.Listener {
         // on the next paused connect.
         if (title.isNullOrBlank() && artist.isNullOrBlank() && album.isNullOrBlank()) return
         try {
-            lastTrackFile().writeText(listOf(title ?: "", artist ?: "", album ?: "").joinToString("\u0001"))
+            // The sender is stored too: a cached track must never be shown for a
+            // different device that just connected (a Mac video session used to
+            // display the track the iPhone played minutes earlier).
+            lastTrackFile().writeText(
+                listOf(title ?: "", artist ?: "", album ?: "", AppState.snapshot.senderName)
+                    .joinToString("\u0001"),
+            )
         } catch (_: Throwable) {
         }
     }
@@ -690,6 +731,9 @@ class AirPlayService : Service(), AirPlayServer.Listener {
             if (!f.exists()) return
             val parts = f.readText().split("\u0001")
             if (parts.size < 3) return
+            // Files written before this change have no sender field: they are
+            // still reused once, but new entries always carry the sender.
+            if (parts.size >= 4 && parts[3] != AppState.snapshot.senderName) return
             val title = parts[0]
             if (title.isBlank()) return
             val art = lastArtworkFile().takeIf { it.exists() }?.readBytes()
